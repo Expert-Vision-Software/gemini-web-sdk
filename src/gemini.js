@@ -113,11 +113,22 @@ class Gemini {
             new RPCData({ rpcid: GRPC.READ_CHAT, payload: JSON.stringify([cid, limit, null, 1, [1], [4], null, 1]) }),
         ]);
         const responseJson = extractJsonFromResponse(response.data);
+        if (process.env.GEMINI_REVERSE_DEBUG) {
+            console.error(`[gemini-reverse:readChat] cid=${cid} responseJson.length=${responseJson.length}`);
+            for (let i = 0; i < responseJson.length; i++) {
+                const part = responseJson[i];
+                if (Array.isArray(part)) {
+                    console.error(`  part[${i}].length=${part.length} part[${i}][1]=${JSON.stringify(part[1])} part[${i}][2]=${JSON.stringify(part[2])}`);
+                } else {
+                    console.error(`  part[${i}] type=${typeof part}`);
+                }
+            }
+        }
         for (const part of responseJson) {
             const bodyStr = getNestedValue(part, [2]);
             if (!bodyStr) continue;
             let body; try { body = JSON.parse(bodyStr); } catch { continue; }
-            const turnsData = getNestedValue(body, [0]);
+            const turnsData = getNestedValue(body, [0]) ?? getNestedValue(body, [1]) ?? getNestedValue(body, [2]);
             if (!turnsData) continue;
             const turns = [];
             for (const convTurn of turnsData) {
@@ -136,6 +147,7 @@ class Gemini {
             }
             return turns;
         }
+        if (process.env.GEMINI_REVERSE_DEBUG) console.error(`[gemini-reverse:readChat] cid=${cid} parser-empty-fallback responseJson.length=${responseJson.length}`);
         return [];
     }
 
@@ -777,11 +789,22 @@ class Gemini {
                 new RPCData({ rpcid: GRPC.READ_CHAT, payload: JSON.stringify([cid, 5, null, 1, [1], [4], null, 1]) }),
             ]);
             const responseJson = extractJsonFromResponse(response.data);
+            if (process.env.GEMINI_REVERSE_DEBUG) {
+                console.error(`[gemini-reverse:_readChatInternal] cid=${cid} responseJson.length=${responseJson.length}`);
+                for (let i = 0; i < responseJson.length; i++) {
+                    const part = responseJson[i];
+                    if (Array.isArray(part)) {
+                        console.error(`  part[${i}].length=${part.length} part[${i}][1]=${JSON.stringify(part[1])} part[${i}][2]=${JSON.stringify(part[2])}`);
+                    } else {
+                        console.error(`  part[${i}] type=${typeof part}`);
+                    }
+                }
+            }
             for (const part of responseJson) {
                 const bodyStr = getNestedValue(part, [2]);
                 if (!bodyStr) continue;
                 let body; try { body = JSON.parse(bodyStr); } catch { continue; }
-                const turnsData = getNestedValue(body, [0]);
+                const turnsData = getNestedValue(body, [0]) ?? getNestedValue(body, [1]) ?? getNestedValue(body, [2]);
                 if (!turnsData) continue;
                 const turns = [];
                 for (const convTurn of turnsData) {
@@ -799,6 +822,7 @@ class Gemini {
                 }
                 return { cid, turns };
             }
+            if (process.env.GEMINI_REVERSE_DEBUG) console.error(`[gemini-reverse:_readChatInternal] cid=${cid} parser-empty-fallback responseJson.length=${responseJson.length}`);
             return null;
         } catch { return null; }
     }
