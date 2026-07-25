@@ -128,7 +128,7 @@ class Gemini {
             const bodyStr = getNestedValue(part, [2]);
             if (!bodyStr) continue;
             let body; try { body = JSON.parse(bodyStr); } catch { continue; }
-            const turnsData = getNestedValue(body, [0]) ?? getNestedValue(body, [1]) ?? getNestedValue(body, [2]);
+            const turnsData = getNestedValue(body, [0]) ?? getNestedValue(body, [1]) ?? getNestedValue(body, [2]) ?? getNestedValue(body, [3]) ?? getNestedValue(body, [4]);
             if (!turnsData) continue;
             const turns = [];
             for (const convTurn of turnsData) {
