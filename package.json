@@ -8,7 +8,7 @@
   "author": "Expert Vision Software",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Expert-Vision-Software/gemini-reverse.git"
+    "url": "git+https://github.com/Expert-Vision-Software/gemini-reverse.git"
   },
   "bugs": {
     "url": "https://github.com/Expert-Vision-Software/gemini-reverse/issues"
