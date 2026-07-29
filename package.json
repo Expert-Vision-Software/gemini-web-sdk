@@ -1,5 +1,5 @@
 {
-  "name": "@expert-vision-software/gemini-reverse",
+  "name": "gemini-web-sdk",
   "version": "2.2.0",
   "description": "Unofficial Node.js client for gemini.google.com — inspired by Gemini-API (Python). Supports streaming, chat sessions, gems, file uploads, and TypeScript.",
   "main": "index.js",
@@ -8,12 +8,12 @@
   "author": "Expert Vision Software",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Expert-Vision-Software/gemini-reverse.git"
+    "url": "git+https://github.com/Expert-Vision-Software/gemini-web-sdk.git"
   },
   "bugs": {
-    "url": "https://github.com/Expert-Vision-Software/gemini-reverse/issues"
+    "url": "https://github.com/Expert-Vision-Software/gemini-web-sdk/issues"
   },
-  "homepage": "https://github.com/Expert-Vision-Software/gemini-reverse#readme",
+  "homepage": "https://github.com/Expert-Vision-Software/gemini-web-sdk#readme",
   "keywords": [
     "gemini",
     "google-gemini",

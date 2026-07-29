@@ -114,7 +114,7 @@ class Gemini {
         ]);
         const responseJson = extractJsonFromResponse(response.data);
         if (process.env.GEMINI_REVERSE_DEBUG) {
-            console.error(`[@expert-vision-software/gemini-reverse:readChat] cid=${cid} responseJson.length=${responseJson.length}`);
+            console.error(`[gemini-web-sdk:readChat] cid=${cid} responseJson.length=${responseJson.length}`);
             for (let i = 0; i < responseJson.length; i++) {
                 const part = responseJson[i];
                 if (Array.isArray(part)) {
@@ -147,7 +147,7 @@ class Gemini {
             }
             return turns;
         }
-        if (process.env.GEMINI_REVERSE_DEBUG) console.error(`[@expert-vision-software/gemini-reverse:readChat] cid=${cid} parser-empty-fallback responseJson.length=${responseJson.length}`);
+        if (process.env.GEMINI_REVERSE_DEBUG) console.error(`[gemini-web-sdk:readChat] cid=${cid} parser-empty-fallback responseJson.length=${responseJson.length}`);
         return [];
     }
 
@@ -801,7 +801,7 @@ class Gemini {
             ]);
             const responseJson = extractJsonFromResponse(response.data);
             if (process.env.GEMINI_REVERSE_DEBUG) {
-                console.error(`[@expert-vision-software/gemini-reverse:_readChatInternal] cid=${cid} responseJson.length=${responseJson.length}`);
+                console.error(`[gemini-web-sdk:_readChatInternal] cid=${cid} responseJson.length=${responseJson.length}`);
                 for (let i = 0; i < responseJson.length; i++) {
                     const part = responseJson[i];
                     if (Array.isArray(part)) {
@@ -834,7 +834,7 @@ class Gemini {
                 }
                 return { cid, turns };
             }
-            if (process.env.GEMINI_REVERSE_DEBUG) console.error(`[@expert-vision-software/gemini-reverse:_readChatInternal] cid=${cid} parser-empty-fallback responseJson.length=${responseJson.length}`);
+            if (process.env.GEMINI_REVERSE_DEBUG) console.error(`[gemini-web-sdk:_readChatInternal] cid=${cid} parser-empty-fallback responseJson.length=${responseJson.length}`);
             return null;
         } catch { return null; }
     }
