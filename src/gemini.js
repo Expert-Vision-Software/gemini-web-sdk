@@ -139,16 +139,27 @@ class Gemini {
                         const rcid = getNestedValue(cd, [0]);
                         if (!rcid) continue;
                         const [text, thoughts, webImgs, genImgs, genVids, genMedia] = this._parseCandidate(cd, cid, rid, rcid);
-                        turns.push({ role: 'model', text, thoughts, images: [...webImgs, ...genImgs], videos: genVids, media: genMedia });
+                        turns.push({ role: 'model', text, thoughts, images: [...webImgs, ...genImgs], videos: genVids, media: genMedia, rid, rcid });
                     }
                 }
                 const userText = getNestedValue(convTurn, [2, 0, 0], '');
-                if (userText) turns.push({ role: 'user', text: userText });
+                if (userText) turns.push({ role: 'user', text: userText, rid });
             }
             return turns;
         }
         if (process.env.GEMINI_REVERSE_DEBUG) console.error(`[gemini-reverse:readChat] cid=${cid} parser-empty-fallback responseJson.length=${responseJson.length}`);
         return [];
+    }
+
+    async continueChat(cid) {
+        if (this._guest) throw new APIError('Chat history not available in guest mode.');
+        const history = await this.readChat(cid, 1);
+        const lastModelTurn = [...history].reverse().find(t => t.role === 'model');
+        const rid = lastModelTurn?.rid || '';
+        const rcid = lastModelTurn?.rcid || '';
+        const session = this.newChat();
+        session.metadata = [cid, rid, rcid, null, null, null, null, null, null, ''];
+        return session;
     }
 
     async deleteChat(cid) {
@@ -808,13 +819,14 @@ class Gemini {
                 if (!turnsData) continue;
                 const turns = [];
                 for (const convTurn of turnsData) {
+                    const rid = getNestedValue(convTurn, [0, 1], '');
                     const candidatesList = getNestedValue(convTurn, [3, 0]);
                     if (candidatesList) {
                         for (const cd of candidatesList) {
                             const rcid = getNestedValue(cd, [0]);
                             if (!rcid) continue;
-                            const [text, thoughts, webImgs, genImgs, genVids, genMedia] = this._parseCandidate(cd, cid, '', rcid);
-                            turns.push({ role: 'model', text, model_output: new ModelOutput([cid, ''], [new Candidate({ rcid, index: 0, text, thoughts, web_images: webImgs, generated_images: genImgs, generated_videos: genVids, generated_media: genMedia, done: true })]) });
+                            const [text, thoughts, webImgs, genImgs, genVids, genMedia] = this._parseCandidate(cd, cid, rid, rcid);
+                            turns.push({ role: 'model', text, model_output: new ModelOutput([cid, rid, rcid], [new Candidate({ rcid, index: 0, text, thoughts, web_images: webImgs, generated_images: genImgs, generated_videos: genVids, generated_media: genMedia, done: true })]) });
                         }
                     }
                     const userText = getNestedValue(convTurn, [2, 0, 0], '');
