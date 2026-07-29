@@ -55,7 +55,7 @@ An unofficial Node.js client for [Google Gemini](https://gemini.google.com), ins
 ## Installation
 
 ```bash
-npm install gemini-reverse
+npm install @expert-vision-software/gemini-reverse
 ```
 
 ## Authentication
@@ -73,7 +73,7 @@ npm install gemini-reverse
 Import the package and initialize a client with your cookies.
 
 ```js
-const { Gemini } = require('gemini-reverse');
+const { Gemini } = require('@expert-vision-software/gemini-reverse');
 
 const client = new Gemini({
     secure_1psid: 'YOUR_SECURE_1PSID',
@@ -96,7 +96,7 @@ await client.init(); // optional — called automatically on first use
 Guest mode allows you to use Gemini without any Google account or cookies. Multi-turn chat sessions are fully supported in this mode.
 
 ```js
-const { Gemini } = require('gemini-reverse');
+const { Gemini } = require('@expert-vision-software/gemini-reverse');
 
 const client = new Gemini(); // no credentials needed
 
@@ -116,7 +116,7 @@ console.log(r2.text); // remembers "Rynn" from the previous turn
 Create a `ChatSession` via `newChat()` and call `generateContent` on it. It returns a `ModelOutput` object.
 
 ```js
-const { Gemini } = require('gemini-reverse');
+const { Gemini } = require('@expert-vision-software/gemini-reverse');
 
 const client = new Gemini({ secure_1psid: 'YOUR_COOKIE' });
 const chat = client.newChat();
@@ -130,7 +130,7 @@ console.log(response.text);
 For quick one-shot prompts without creating a `ChatSession`, use `client.ask()`:
 
 ```js
-const { Gemini, Model } = require('gemini-reverse');
+const { Gemini, Model } = require('@expert-vision-software/gemini-reverse');
 
 const client = new Gemini({ secure_1psid: 'YOUR_COOKIE' });
 
@@ -220,7 +220,7 @@ Supported file types include images (`jpg`, `png`, `webp`, `gif`), PDFs, and oth
 Use `newChat()` to create a `ChatSession` object and send messages through it. The conversation history — including `cid`, `rid`, and `rcid` — is handled automatically and updated after each turn.
 
 ```js
-const { Gemini } = require('gemini-reverse');
+const { Gemini } = require('@expert-vision-software/gemini-reverse');
 
 const client = new Gemini({ secure_1psid: 'YOUR_COOKIE' });
 const chat = client.newChat();
@@ -351,7 +351,7 @@ After the stream ends, access the full final output via `chat.lastOutput`.
 Pass `extended_thinking: true` to enable deeper reasoning mode. The model spends more time planning before responding. Supported on Pro and Advanced tier models.
 
 ```js
-const { Gemini, Model } = require('gemini-reverse');
+const { Gemini, Model } = require('@expert-vision-software/gemini-reverse');
 
 const chat = client.newChat({ model: Model.ADVANCED_PRO });
 const response = await chat.generateContent({
@@ -370,7 +370,7 @@ console.log('Answer:', response.text);
 Specify which language model to use when creating a `ChatSession`. Available models are discovered dynamically at init time based on your account tier.
 
 ```js
-const { Gemini, Model } = require('gemini-reverse');
+const { Gemini, Model } = require('@expert-vision-software/gemini-reverse');
 
 // Using a built-in constant
 const chat1 = client.newChat({ model: Model.BASIC_FLASH });
@@ -475,7 +475,7 @@ await client.delGem(newGem); // or pass a gem ID string
 When using thinking-capable models, the model's internal reasoning is exposed via `response.thoughts`.
 
 ```js
-const { Gemini, Model } = require('gemini-reverse');
+const { Gemini, Model } = require('@expert-vision-software/gemini-reverse');
 
 const client = new Gemini({ secure_1psid: 'YOUR_COOKIE' });
 const chat = client.newChat({ model: Model.BASIC_FLASH });
@@ -771,7 +771,7 @@ const {
     UsageLimitExceeded,
     ModelInvalid,
     TemporarilyBlocked,
-} = require('gemini-reverse');
+} = require('@expert-vision-software/gemini-reverse');
 
 try {
     const response = await chat.generateContent({ prompt: 'Hello!' });
@@ -838,6 +838,14 @@ gemini-reverse/
 [acheong08/Bard](https://github.com/acheong08/Bard)
 
 [enable-guest-mode](https://github.com/luuquangvu/Gemini-API/tree/enable-guest-mode) by [@luuquangvu](https://github.com/luuquangvu) — the Pull Request this project is based on.
+
+---
+
+## Acknowledgments
+
+This package is a community continuation of the original [gemini-reverse](https://github.com/rynn-k/Gemini-Reverse) project by **[@rynn-k](https://github.com/rynn-k)**. We thank the original developer for the foundational work reverse-engineering the Gemini web API — this library would not exist without their effort. We wish them well and hope this fork provides the continued development and responsiveness the community needs.
+
+This project is independently maintained by **Expert Vision Software** and is not affiliated with or endorsed by Google.
 
 ---
 
