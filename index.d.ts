@@ -447,7 +447,8 @@ export declare class Gemini {
     models(): Promise<AvailableModel[]>;
 
     chats(): Promise<unknown[]>;
-    readChat(cid: string, limit?: number): Promise<{ role: string; text: string; images?: (WebImage | GeneratedImage)[]; videos?: GeneratedVideo[]; media?: GeneratedMedia[] }[]>;
+    readChat(cid: string, limit?: number): Promise<{ role: string; text: string; rid?: string; rcid?: string; images?: (WebImage | GeneratedImage)[]; videos?: GeneratedVideo[]; media?: GeneratedMedia[] }[]>;
+    continueChat(cid: string): Promise<ChatSession>;
     deleteChat(cid: string): Promise<void>;
 
     gems(): Promise<{ id: string; name: string; description: string; prompt: string | null; predefined: boolean }[]>;
