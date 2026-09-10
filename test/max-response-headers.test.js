@@ -33,8 +33,7 @@ function buildSetCookieFlood(targetBytes) {
     return lines.join('');
 }
 
-function startFixtureServer({ headerBytes = TARGET_HEADER_BYTES, getBody = '', postBody = null } = {}) {
-    return new Promise((resolve) => {
+function startFixtureServer({ headerBytes = TARGET_HEADER_BYTES, getBody = '', postBody = null } = {}) {    return new Promise((resolve) => {
         const flood = buildSetCookieFlood(headerBytes);
         const buildResponse = (body) => {
             const responseBody = Buffer.from(body, 'utf8');
@@ -67,6 +66,29 @@ function startFixtureServer({ headerBytes = TARGET_HEADER_BYTES, getBody = '', p
 
 function fixtureOrigin(port) {
     return `http://127.0.0.1:${port}`;
+}
+
+function startRedirectFixtureServer({ hops = 7 } = {}) {
+    return new Promise((resolve) => {
+        const server = net.createServer((socket) => {
+            let responded = false;
+            socket.on('data', (chunk) => {
+                if (responded) return;
+                responded = true;
+                const reqLine = chunk.toString('utf8', 0, chunk.indexOf('\r\n'));
+                const match = /hop\/(\d+)/.exec(reqLine);
+                const current = match ? parseInt(match[1], 10) : hops;
+                if (current > 0) {
+                    socket.end(`HTTP/1.1 302 Found\r\nLocation: /hop/${current - 1}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`);
+                } else {
+                    socket.end(`HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(BODY_INIT_OK)}\r\nConnection: close\r\n\r\n${BODY_INIT_OK}`);
+                }
+            });
+        });
+        server.listen(0, '127.0.0.1', () => {
+            resolve({ server, port: server.address().port });
+        });
+    });
 }
 
 async function testFixtureExceedsLlhttpDefault() {
@@ -176,7 +198,7 @@ async function testExplicitDefaultCapStillRejectsOversizedHeaders() {
 async function testAuthClassificationUnchanged() {
     const { server, port } = await startFixtureServer({
         headerBytes: 1024,
-        body: '<!doctype html><html><body><script>window.WIZ_global_data = {"SNlM0e":"x"};</script></body></html>',
+        getBody: '<!doctype html><html><body><script>window.WIZ_global_data = {"SNlM0e":"x"};</script></body></html>',
     });
     try {
         const base = fixtureOrigin(port);
@@ -199,6 +221,36 @@ async function testAuthClassificationUnchanged() {
     console.log('  PASS AuthError("Cookies invalid.") classification unchanged');
 }
 
+async function testRedirectCapStillHonored() {
+    const { server, port } = await startRedirectFixtureServer({ hops: 7 });
+    try {
+        const base = fixtureOrigin(port);
+        const client = new Gemini({
+            secure_1psid: 'fixture-1psid-value',
+            endpoints: {
+                GOOGLE: base,
+                INIT: `${base}/hop/${7}`,
+            },
+        });
+
+        await assert.rejects(
+            () => client.init(),
+            (e) => {
+                let cur = e;
+                while (cur) {
+                    if (/redirects exceeded/i.test(cur.message || '')) return true;
+                    cur = cur.cause;
+                }
+                return false;
+            },
+            'a 7-hop redirect chain must still be capped by the per-request maxRedirects of 5'
+        );
+    } finally {
+        server.close();
+    }
+    console.log('  PASS per-request maxRedirects cap is honored by the header-limit transport');
+}
+
 async function main() {
     console.log('Running max-response-headers tests...\n');
 
@@ -207,6 +259,7 @@ async function main() {
     await testBatchExecuteToleratesLargeResponseHeaders();
     await testExplicitDefaultCapStillRejectsOversizedHeaders();
     await testAuthClassificationUnchanged();
+    await testRedirectCapStillHonored();
 
     console.log('\nAll tests passed!');
 }
