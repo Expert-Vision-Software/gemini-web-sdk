@@ -370,6 +370,14 @@ export declare class GemJar {
     toObject(): Record<string, Gem>;
 }
 
+export interface EndpointOverrides {
+    GOOGLE?: string;
+    INIT?: string;
+    GENERATE?: string;
+    UPLOAD?: string;
+    BATCH_EXEC?: string;
+}
+
 export interface GeminiOptions {
     secure_1psid?: string | null;
     proxy?: string | null;
@@ -378,6 +386,8 @@ export interface GeminiOptions {
     closeDelay?: number;
     verbose?: boolean;
     watchdogTimeout?: number;
+    maxResponseHeaderSize?: number;
+    endpoints?: EndpointOverrides;
 }
 
 export interface NewChatOptions {
@@ -435,6 +445,8 @@ export declare class Gemini {
     closeDelay: number;
     verbose: boolean;
     watchdogTimeout: number;
+    maxResponseHeaderSize: number;
+    endpoints: Required<EndpointOverrides>;
 
     constructor(opts?: GeminiOptions);
 
