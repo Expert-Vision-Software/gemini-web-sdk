@@ -33,6 +33,6 @@
     "uuid": "^13.0.0"
   },
   "scripts": {
-    "test": "node test/rid-rcid.test.js"
+    "test": "node test/rid-rcid.test.js && node test/max-response-headers.test.js"
   }
 }
