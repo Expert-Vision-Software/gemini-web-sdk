@@ -7,6 +7,7 @@ const mime = require('mime-types');
 const FormData = require('form-data');
 const { Endpoint, Headers } = require('../constants');
 const { parseProxy } = require('./auth');
+const { DEFAULT_MAX_RESPONSE_HEADER_SIZE, headerLimitConfig } = require('./request');
 
 function generateRandomName(ext = '.txt') {
     return `input_${Math.floor(Math.random() * 9000000) + 1000000}${ext}`;
@@ -22,7 +23,7 @@ function parseFileName(file) {
     return generateRandomName();
 }
 
-async function uploadFile(file, proxy = null, pushId = '', cookies = {}) {
+async function uploadFile(file, proxy = null, pushId = '', cookies = {}, { maxHeaderSize = DEFAULT_MAX_RESPONSE_HEADER_SIZE, endpoints = {} } = {}) {
     let content, fname;
 
     if (typeof file === 'string') {
@@ -44,7 +45,7 @@ async function uploadFile(file, proxy = null, pushId = '', cookies = {}) {
 
     const cookieStr = Object.entries(cookies).map(([k, v]) => `${k}=${v}`).join('; ');
 
-    const res = await axios.post(Endpoint.UPLOAD, form, {
+    const res = await axios.post(endpoints.UPLOAD || Endpoint.UPLOAD, form, {
         headers: {
             ...Headers.REFERER,
             ...Headers.UPLOAD,
@@ -52,7 +53,7 @@ async function uploadFile(file, proxy = null, pushId = '', cookies = {}) {
             'Push-ID': pushId,
             ...(cookieStr ? { 'Cookie': cookieStr } : {}),
         },
-        maxRedirects: 5,
+        ...headerLimitConfig(maxHeaderSize, { maxRedirects: 5 }),
         ...(proxy ? { proxy: parseProxy(proxy) } : {}),
     });
 
