@@ -1,0 +1,11 @@
+{
+  "permission": {
+    "skill": {
+      "gemiterm": "allow",
+      "debate-with-gemini": "allow"
+    }
+  },
+  "plugin": [
+    "opencode-gemiterm-skills"
+  ]
+}
