@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.3.0] - 2026-09-13
 
 ### Added
 - `maxResponseHeaderSize` option (default `65536`) on the `Gemini` constructor, honored by every outbound request (init, google.com pre-flight, batchexecute, generate, upload)
