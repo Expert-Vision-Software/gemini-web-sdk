@@ -15,6 +15,7 @@ const { Candidate, ModelOutput } = require('./types/output');
 const { WebImage, GeneratedImage, GeneratedVideo, GeneratedMedia } = require('./types/media');
 const { DeepResearchPlan, DeepResearchStatus, DeepResearchResult } = require('./types/research');
 const { getAccessToken, cookieStr, parseCookies, parseProxy } = require('./utils/auth');
+const { DEFAULT_MAX_RESPONSE_HEADER_SIZE, headerLimitConfig } = require('./utils/request');
 const { uploadFile, parseFileName } = require('./utils/upload');
 const { getDeltaByFpLen, getNestedValue, extractJsonFromResponse, StreamingFrameParser } = require('./utils/parser');
 const { extractDeepResearchPlan, extractDeepResearchStatusPayload } = require('./utils/research');
@@ -31,6 +32,8 @@ class Gemini {
         closeDelay = 300000,
         verbose = false,
         watchdogTimeout = 30000,
+        maxResponseHeaderSize = DEFAULT_MAX_RESPONSE_HEADER_SIZE,
+        endpoints = {},
     } = {}) {
         this.cookies = secure_1psid ? { '__Secure-1PSID': secure_1psid } : {};
         this.proxy = proxy;
@@ -39,6 +42,8 @@ class Gemini {
         this.autoClose = autoClose;
         this.closeDelay = closeDelay;
         this.watchdogTimeout = watchdogTimeout;
+        this.maxResponseHeaderSize = maxResponseHeaderSize;
+        this.endpoints = { ...Endpoint, ...endpoints };
 
         this._ready = false;
         this._guest = !secure_1psid;
@@ -63,6 +68,7 @@ class Gemini {
                 } else {
                     const [accessToken, buildLabel, sessionId, language, pushId, validCookies] = await getAccessToken(
                         this.cookies, this.proxy, this.verbose,
+                        { maxHeaderSize: this.maxResponseHeaderSize, endpoints: this.endpoints },
                     );
                     this.accessToken = accessToken;
                     this.buildLabel = buildLabel;
@@ -286,7 +292,7 @@ class Gemini {
         if (this._guest && deep_research) throw new APIError('Deep research not available in guest mode.');
         let fileData = null;
         if (files && files.length) {
-            const uploaded = await Promise.all(files.map(f => uploadFile(f, this.proxy, this.pushId, this.cookies)));
+            const uploaded = await Promise.all(files.map(f => uploadFile(f, this.proxy, this.pushId, this.cookies, { maxHeaderSize: this.maxResponseHeaderSize, endpoints: this.endpoints })));
             fileData = uploaded.map((url, i) => [[url], parseFileName(files[i])]);
         }
         const ss = { last_texts: {}, last_thoughts: {} };
@@ -303,7 +309,7 @@ class Gemini {
         if (this._guest && deep_research) throw new APIError('Deep research not available in guest mode.');
         let fileData = null;
         if (files && files.length) {
-            const uploaded = await Promise.all(files.map(f => uploadFile(f, this.proxy, this.pushId, this.cookies)));
+            const uploaded = await Promise.all(files.map(f => uploadFile(f, this.proxy, this.pushId, this.cookies, { maxHeaderSize: this.maxResponseHeaderSize, endpoints: this.endpoints })));
             fileData = uploaded.map((url, i) => [[url], parseFileName(files[i])]);
         }
         const ss = { last_texts: {}, last_thoughts: {} };
@@ -390,7 +396,7 @@ class Gemini {
         let hasGeneratedText = false;
         const sleepTime = 10000;
 
-        const res = await axios.post(`${Endpoint.GENERATE}?${params}`, body.toString(), {
+        const res = await axios.post(`${this.endpoints.GENERATE}?${params}`, body.toString(), {
             headers: {
                 ...Headers.GEMINI, ...modelHeaders,
                 'x-goog-ext-525005358-jspb': `["${uid}",1]`,
@@ -399,6 +405,7 @@ class Gemini {
             responseType: 'stream',
             timeout: this.timeout,
             validateStatus: null,
+            ...headerLimitConfig(this.maxResponseHeaderSize),
             ...(this.proxy ? { proxy: parseProxy(this.proxy) } : {}),
         });
 
@@ -581,9 +588,12 @@ class Gemini {
     }
 
     async _getGuestCookie() {
-        const res = await axios.post(Endpoint.BATCH_EXEC + '?rpcids=maGuAc&source-path=%2F&hl=en-US&_reqid=1&rt=c',
+        const res = await axios.post(this.endpoints.BATCH_EXEC + '?rpcids=maGuAc&source-path=%2F&hl=en-US&_reqid=1&rt=c',
             'f.req=%5B%5B%5B%22maGuAc%22%2C%22%5B0%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&',
-            { headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' } }
+            {
+                headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                ...headerLimitConfig(this.maxResponseHeaderSize),
+            }
         );
         const cookies = parseCookies(res.headers);
         if (cookies['__Secure-1PSID']) this.cookies['__Secure-1PSID'] = cookies['__Secure-1PSID'];
@@ -616,7 +626,7 @@ class Gemini {
         if (this.sessionId) params.set('f.sid', this.sessionId);
         const body = new URLSearchParams({ 'f.req': JSON.stringify([null, JSON.stringify(inner)]) });
 
-        const res = await axios.post(`${Endpoint.GENERATE}?${params}`, body.toString(), {
+        const res = await axios.post(`${this.endpoints.GENERATE}?${params}`, body.toString(), {
             headers: {
                 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
                 'x-goog-ext-525001261-jspb': '[1,null,null,null,"fbb127bbb056c959",null,null,0,[4,6],null,null,1,null,null,1]',
@@ -630,6 +640,7 @@ class Gemini {
             },
             timeout: this.timeout,
             validateStatus: null,
+            ...headerLimitConfig(this.maxResponseHeaderSize),
         });
 
         if (res.status !== 200) throw new APIError(`Generate failed. Status: ${res.status}`);
@@ -945,7 +956,7 @@ class Gemini {
                     'f.req': JSON.stringify([payloads.map(p => p.serialize())]),
                 });
                 const res = await axios.post(
-                    `${Endpoint.BATCH_EXEC}?${params}`,
+                    `${this.endpoints.BATCH_EXEC}?${params}`,
                     body.toString(),
                     {
                         headers: {
@@ -953,6 +964,7 @@ class Gemini {
                             'Cookie': cookieStr(this.cookies),
                         },
                         timeout: this.timeout,
+                        ...headerLimitConfig(this.maxResponseHeaderSize),
                         ...(this.proxy ? { proxy: parseProxy(this.proxy) } : {}),
                         validateStatus: null,
                     },

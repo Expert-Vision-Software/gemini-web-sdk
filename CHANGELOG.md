@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `maxResponseHeaderSize` option (default `65536`) on the `Gemini` constructor, honored by every outbound request (init, google.com pre-flight, batchexecute, generate, upload)
+  - Node/Bun parse responses with llhttp, which aborts with `HPE_HEADER_OVERFLOW` when a response header block exceeds 16384 bytes; large `Set-Cookie` floods from `gemini.google.com` (common behind proxies) made every SDK call fail before application code saw a response
+  - Implemented via a per-request `maxHeaderSize` on the underlying `http(s)` transport (axios `transport` override wrapping `follow-redirects`); proxy, redirect, timeout, and streaming behavior are unchanged
+- Media downloads (`Image#save`, `GeneratedImage#save`, `Video#save`, `GeneratedVideo#save`, `GeneratedMedia#save`) honor the client's `maxResponseHeaderSize` when a `client_ref` is attached
+- `endpoints` option to override the hardcoded Google endpoints per client instance (mainly for testing against local fixtures)
+- Regression suite `test/max-response-headers.test.js`: raw-socket fixture serving a 20KB `Set-Cookie` header block proves init and `_batchExecute` POSTs succeed (red before the fix), an explicit `maxResponseHeaderSize: 16384` still rejects oversized headers, and the `AuthError('Cookies invalid.')` classification is unchanged
+- `npm test` now runs both test files
+
 ## [2.2.0] - 2026-07-29
 
 ### Added
