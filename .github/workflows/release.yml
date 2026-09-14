@@ -114,6 +114,7 @@ jobs:
 
       - name: Publish to npm
         run: |
+          unset NPM_CONFIG_USERCONFIG
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
           npm publish --provenance --access public
         env:
