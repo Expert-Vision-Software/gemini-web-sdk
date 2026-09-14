@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { parseProxy } = require('../utils/auth');
+const { headerLimitConfig } = require('../utils/request');
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -54,6 +55,7 @@ class Image {
                 ...(cookies ? { 'Cookie': Object.entries(cookies).map(([k, v]) => `${k}=${v}`).join('; ') } : {}),
             },
             maxRedirects: 5,
+            ...(clientRef ? headerLimitConfig(clientRef.maxResponseHeaderSize, { maxRedirects: 5 }) : {}),
             ...(proxyConfig ? { proxy: proxyConfig } : {}),
         });
 
@@ -177,6 +179,7 @@ class Video {
                 ...(cookieStr && { Cookie: cookieStr }),
             },
             ...(proxyConfig && { proxy: proxyConfig }),
+            ...(this.client_ref ? headerLimitConfig(this.client_ref.maxResponseHeaderSize) : {}),
             validateStatus: null,
         });
 

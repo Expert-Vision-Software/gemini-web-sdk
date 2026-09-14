@@ -3,6 +3,7 @@
 const axios = require('axios');
 const { Endpoint, Headers } = require('../constants');
 const { AuthError } = require('../errors');
+const { DEFAULT_MAX_RESPONSE_HEADER_SIZE, headerLimitConfig } = require('./request');
 
 function cookieStr(c) {
     return Object.entries(c).map(([k, v]) => `${k}=${v}`).join('; ');
@@ -30,10 +31,10 @@ function parseProxy(str) {
     }
 }
 
-async function sendInitRequest(cookies, proxy = null) {
-    const res = await axios.get(Endpoint.INIT, {
+async function sendInitRequest(cookies, proxy = null, { maxHeaderSize = DEFAULT_MAX_RESPONSE_HEADER_SIZE, endpoints = {} } = {}) {
+    const res = await axios.get(endpoints.INIT || Endpoint.INIT, {
         headers: { ...Headers.GEMINI, 'Cookie': cookieStr(cookies) },
-        maxRedirects: 5,
+        ...headerLimitConfig(maxHeaderSize, { maxRedirects: 5 }),
         ...(proxy ? { proxy: parseProxy(proxy) } : {}),
     });
     const t = res.data;
@@ -46,10 +47,13 @@ async function sendInitRequest(cookies, proxy = null) {
     return [snlm0e, cfb2h, fdrfje, language, pushId, parseCookies(res.headers, cookies)];
 }
 
-async function getAccessToken(baseCookies, proxy = null, verbose = false) {
+async function getAccessToken(baseCookies, proxy = null, verbose = false, { maxHeaderSize = DEFAULT_MAX_RESPONSE_HEADER_SIZE, endpoints = {} } = {}) {
     let extraCookies = {};
     try {
-        const r = await axios.get(Endpoint.GOOGLE, { maxRedirects: 5, ...(proxy ? { proxy: parseProxy(proxy) } : {}) });
+        const r = await axios.get(endpoints.GOOGLE || Endpoint.GOOGLE, {
+            ...headerLimitConfig(maxHeaderSize, { maxRedirects: 5 }),
+            ...(proxy ? { proxy: parseProxy(proxy) } : {}),
+        });
         if (r.status === 200) extraCookies = parseCookies(r.headers);
     } catch {}
 
@@ -59,7 +63,7 @@ async function getAccessToken(baseCookies, proxy = null, verbose = false) {
         throw new AuthError('__Secure-1PSID cookie required for authentication.');
     }
 
-    const result = await sendInitRequest(cookies, proxy);
+    const result = await sendInitRequest(cookies, proxy, { maxHeaderSize, endpoints });
     const [snlm0e, cfb2h, fdrfje, language, pushId, validCookies] = result;
     return [snlm0e, cfb2h, fdrfje, language, pushId, validCookies];
 }

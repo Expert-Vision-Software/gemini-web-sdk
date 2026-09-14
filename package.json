@@ -1,6 +1,6 @@
 {
   "name": "gemini-web-sdk",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Unofficial Node.js client for gemini.google.com — inspired by Gemini-API (Python). Supports streaming, chat sessions, gems, file uploads, and TypeScript.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -33,6 +33,6 @@
     "uuid": "^13.0.0"
   },
   "scripts": {
-    "test": "node test/rid-rcid.test.js"
+    "test": "node test/rid-rcid.test.js && node test/max-response-headers.test.js"
   }
 }

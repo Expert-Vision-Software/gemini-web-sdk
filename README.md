@@ -82,6 +82,8 @@ const client = new Gemini({
     autoClose: false,                       // auto-close client after inactivity
     closeDelay: 300000,                     // inactivity delay before closing in ms
     verbose: false,                         // enable verbose logging
+    maxResponseHeaderSize: 65536,           // max response header block size in bytes, default 65536
+    endpoints: {},                          // optional endpoint overrides, e.g. { INIT: 'https://...' }
 });
 
 await client.init(); // optional — called automatically on first use
@@ -90,6 +92,34 @@ await client.init(); // optional — called automatically on first use
 > `init()` is optional. Every method calls it internally before running. Call it explicitly if you want to catch initialization errors early (e.g. expired cookies) before sending any prompts.
 
 > `autoClose` with a reasonable `closeDelay` is recommended for always-on services (e.g. chatbots) for better resource management.
+
+#### Large response headers (`maxResponseHeaderSize`)
+
+Node.js and Bun parse HTTP responses with **llhttp**, which aborts with `HPE_HEADER_OVERFLOW` (`Parse Error: Header overflow`) when a response's header block exceeds **16384 bytes** (the `--max-http-header-size` default). `gemini.google.com` responses carry a large number of `Set-Cookie` headers, so responses can legitimately cross that limit — especially behind proxies or with large cookie sets. When that happens, every SDK call fails before your code sees a response, and the error is easy to misread as an auth failure.
+
+To prevent this, the SDK raises the per-request response-header limit to **65536 bytes (64KB) by default** via the `maxResponseHeaderSize` option, and applies it to every outbound request (init, google.com pre-flight, batchexecute, generate, upload). Responses whose header block exceeds the configured size raise `HPE_HEADER_OVERFLOW`.
+
+> Environment variables are not a reliable alternative: `NODE_OPTIONS=--max-http-header-size=...` is ignored by Bun, and `BUN_CONFIG_MAX_HTTP_HEADER_SIZE` does not affect Bun's `node:http` layer.
+
+```js
+// Lower it back to Node's llhttp default if you want the strict behavior:
+const strict = new Gemini({ secure_1psid: 'YOUR_COOKIE', maxResponseHeaderSize: 16384 });
+```
+
+The `endpoints` option overrides the hardcoded Google endpoints (mainly useful for testing against a local fixture):
+
+```js
+const client = new Gemini({
+    secure_1psid: 'YOUR_COOKIE',
+    endpoints: {
+        GOOGLE: 'http://127.0.0.1:8080',
+        INIT: 'http://127.0.0.1:8080/app',
+        GENERATE: 'http://127.0.0.1:8080/StreamGenerate',
+        UPLOAD: 'http://127.0.0.1:8080/upload',
+        BATCH_EXEC: 'http://127.0.0.1:8080/batchexecute',
+    },
+});
+```
 
 ### Guest Mode
 
