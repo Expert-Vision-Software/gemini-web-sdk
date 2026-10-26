@@ -1,12 +1,9 @@
-'use strict';
+import assert from 'node:assert';
 
-const assert = require('assert');
-const path = require('path');
+import { Gemini } from '../index.js';
+import { Candidate, ModelOutput } from '../src/types/output.js';
 
-const { Gemini } = require(path.join(__dirname, '..', 'index'));
-const { Candidate, ModelOutput } = require(path.join(__dirname, '..', 'src', 'types', 'output'));
-
-function buildReadChatResponse(turnsData) {
+function buildReadChatResponse(turnsData: any[]) {
     const body = JSON.stringify([turnsData]);
     const part = [null, null, body];
     const fullResponse = JSON.stringify([part]);
@@ -34,7 +31,7 @@ function buildTurnsData() {
     ];
 }
 
-async function createMockClient(readChatResponse) {
+async function createMockClient(readChatResponse: string) {
     const client = new Gemini();
     client._ready = true;
     client._guest = false;
@@ -45,7 +42,7 @@ async function createMockClient(readChatResponse) {
     client.pushId = 'test_feed';
     client._reqid = 10000;
 
-    client._batchExecute = async () => ({
+    (client as any)._batchExecute = async () => ({
         data: readChatResponse,
         status: 200,
         headers: {},
@@ -124,7 +121,7 @@ async function testReadChatMultipleModelCandidates() {
 }
 
 async function testReadChatEmptyTurns() {
-    const turnsData = [];
+    const turnsData: any[] = [];
     const response = buildReadChatResponse(turnsData);
     const client = await createMockClient(response);
 
@@ -141,7 +138,7 @@ async function testReadChatInternalRidInModelOutput() {
     assert.ok(result, '_readChatInternal should return a result');
     assert.strictEqual(result.cid, TEST_CID);
 
-    const modelTurn = result.turns.find(t => t.role === 'model');
+    const modelTurn = result.turns?.find(t => t.role === 'model');
     assert.ok(modelTurn, 'Expected a model turn');
     assert.ok(modelTurn.model_output, 'Expected model_output on internal turn');
 
@@ -189,7 +186,7 @@ async function testContinueChatGuestMode() {
     try {
         await client.continueChat('c_any');
         assert.fail('Should have thrown in guest mode');
-    } catch (e) {
+    } catch (e: any) {
         assert.ok(e.message.includes('guest'), `Error should mention guest mode: ${e.message}`);
     }
 

@@ -73,7 +73,7 @@ npm install gemini-web-sdk
 Import the package and initialize a client with your cookies.
 
 ```js
-const { Gemini } = require('gemini-web-sdk');
+import { Gemini } from 'gemini-web-sdk';
 
 const client = new Gemini({
     secure_1psid: 'YOUR_SECURE_1PSID',
@@ -126,7 +126,7 @@ const client = new Gemini({
 Guest mode allows you to use Gemini without any Google account or cookies. Multi-turn chat sessions are fully supported in this mode.
 
 ```js
-const { Gemini } = require('gemini-web-sdk');
+import { Gemini } from 'gemini-web-sdk';
 
 const client = new Gemini(); // no credentials needed
 
@@ -146,7 +146,7 @@ console.log(r2.text); // remembers "Rynn" from the previous turn
 Create a `ChatSession` via `newChat()` and call `generateContent` on it. It returns a `ModelOutput` object.
 
 ```js
-const { Gemini } = require('gemini-web-sdk');
+import { Gemini } from 'gemini-web-sdk';
 
 const client = new Gemini({ secure_1psid: 'YOUR_COOKIE' });
 const chat = client.newChat();
@@ -160,7 +160,7 @@ console.log(response.text);
 For quick one-shot prompts without creating a `ChatSession`, use `client.ask()`:
 
 ```js
-const { Gemini, Model } = require('gemini-web-sdk');
+import { Gemini, Model } from 'gemini-web-sdk';
 
 const client = new Gemini({ secure_1psid: 'YOUR_COOKIE' });
 
@@ -250,7 +250,7 @@ Supported file types include images (`jpg`, `png`, `webp`, `gif`), PDFs, and oth
 Use `newChat()` to create a `ChatSession` object and send messages through it. The conversation history — including `cid`, `rid`, and `rcid` — is handled automatically and updated after each turn.
 
 ```js
-const { Gemini } = require('gemini-web-sdk');
+import { Gemini } from 'gemini-web-sdk';
 
 const client = new Gemini({ secure_1psid: 'YOUR_COOKIE' });
 const chat = client.newChat();
@@ -381,7 +381,7 @@ After the stream ends, access the full final output via `chat.lastOutput`.
 Pass `extended_thinking: true` to enable deeper reasoning mode. The model spends more time planning before responding. Supported on Pro and Advanced tier models.
 
 ```js
-const { Gemini, Model } = require('gemini-web-sdk');
+import { Gemini, Model } from 'gemini-web-sdk';
 
 const chat = client.newChat({ model: Model.ADVANCED_PRO });
 const response = await chat.generateContent({
@@ -400,7 +400,7 @@ console.log('Answer:', response.text);
 Specify which language model to use when creating a `ChatSession`. Available models are discovered dynamically at init time based on your account tier.
 
 ```js
-const { Gemini, Model } = require('gemini-web-sdk');
+import { Gemini, Model } from 'gemini-web-sdk';
 
 // Using a built-in constant
 const chat1 = client.newChat({ model: Model.BASIC_FLASH });
@@ -505,7 +505,7 @@ await client.delGem(newGem); // or pass a gem ID string
 When using thinking-capable models, the model's internal reasoning is exposed via `response.thoughts`.
 
 ```js
-const { Gemini, Model } = require('gemini-web-sdk');
+import { Gemini, Model } from 'gemini-web-sdk';
 
 const client = new Gemini({ secure_1psid: 'YOUR_COOKIE' });
 const chat = client.newChat({ model: Model.BASIC_FLASH });
@@ -794,14 +794,14 @@ console.log(result.text);
 ## Error Handling
 
 ```js
-const {
+import {
     AuthError,
     APIError,
     GeminiError,
     UsageLimitExceeded,
     ModelInvalid,
     TemporarilyBlocked,
-} = require('gemini-web-sdk');
+} from 'gemini-web-sdk';
 
 try {
     const response = await chat.generateContent({ prompt: 'Hello!' });
@@ -838,25 +838,25 @@ Error
 ## Project Structure
 
 ```
-gemini-reverse/
-├── index.js                # entry point & exports
+gemini-web-sdk/
+├── index.ts                # entry point & exports
 ├── src/
-│   ├── gemini.js           # Gemini client (main class)
-│   ├── chat.js             # ChatSession class
-│   ├── constants.js        # Endpoint, GRPC, Headers, Model, ErrorCode
-│   ├── errors.js           # custom error classes
+│   ├── gemini.ts           # Gemini client (main class)
+│   ├── chat.ts             # ChatSession class
+│   ├── constants.ts        # Endpoint, GRPC, Headers, Model, ErrorCode
+│   ├── errors.ts           # custom error classes
 │   ├── types/
-│   │   ├── model.js        # AvailableModel, RPCData
-│   │   ├── output.js       # ModelOutput, Candidate
-│   │   ├── media.js        # WebImage, GeneratedImage, GeneratedVideo, GeneratedMedia
-│   │   ├── gem.js          # Gem, GemJar
-│   │   ├── chat.js         # ChatTurn, ChatHistory, ChatInfo
-│   │   └── research.js     # DeepResearchPlan, DeepResearchStatus, DeepResearchResult
+│   │   ├── model.ts        # AvailableModel, RPCData
+│   │   ├── output.ts       # ModelOutput, Candidate
+│   │   ├── media.ts        # WebImage, GeneratedImage, GeneratedVideo, GeneratedMedia
+│   │   ├── gem.ts          # Gem, GemJar
+│   │   ├── chat.ts         # ChatTurn, ChatHistory, ChatInfo
+│   │   └── research.ts     # DeepResearchPlan, DeepResearchStatus, DeepResearchResult
 │   └── utils/
-│       ├── auth.js         # cookie handling & access token
-│       ├── parser.js       # response parsing + StreamingFrameParser
-│       ├── research.js     # deep research payload extractors
-│       └── upload.js       # file upload helpers
+│       ├── auth.ts         # cookie handling & access token
+│       ├── parser.ts       # response parsing + StreamingFrameParser
+│       ├── research.ts     # deep research payload extractors
+│       └── upload.ts       # file upload helpers
 ```
 
 ## References

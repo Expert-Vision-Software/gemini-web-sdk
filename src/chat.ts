@@ -1,14 +1,27 @@
-'use strict';
+import type { GenerateContentOptions, IChatSession, NewChatOptions } from './types/chat.js';
+import type { IGem } from './types/gem.js';
+import type { GeminiClient } from './types/gemini.js';
+import type { IAvailableModel, ModelDef } from './types/model.js';
+import type { IModelOutput } from './types/output.js';
 
-const { DEFAULT_METADATA } = require('./constants');
-const { Model } = require('./constants');
+import { DEFAULT_METADATA } from './constants.js';
+import { Model } from './constants.js';
 
-class ChatSession {
-    constructor(client, { model = Model.UNSPECIFIED, temporary = false, gem = null, metadata = null } = {}) {
+export class ChatSession implements IChatSession {
+    client: GeminiClient;
+    model: ModelDef | IAvailableModel;
+    gem: IGem | string | null;
+    temporary: boolean;
+    lastOutput: IModelOutput | null;
+    private readonly _meta: (string | null)[];
+
+    constructor(client: GeminiClient, opts: NewChatOptions = {}) {
+        const { model = Model.UNSPECIFIED, temporary = false, gem = null, metadata = null } = opts;
         this.client = client;
         this._meta = [...DEFAULT_METADATA];
         this.gem = gem;
         this.temporary = temporary;
+        this.lastOutput = null;
         this.model = client._resolveModel(model);
         if (metadata) {
             for (let i = 0; i < metadata.length && i < 10; i++) {
@@ -17,21 +30,22 @@ class ChatSession {
         }
     }
 
-    get cid() { return this._meta[0]; }
-    set cid(v) { this._meta[0] = v; }
-    get rid() { return this._meta[1]; }
-    set rid(v) { this._meta[1] = v; }
-    get rcid() { return this._meta[2]; }
-    set rcid(v) { this._meta[2] = v; }
+    get cid() { return this._meta[0] as string; }
+    set cid(v: string) { this._meta[0] = v; }
+    get rid() { return this._meta[1] as string; }
+    set rid(v: string) { this._meta[1] = v; }
+    get rcid() { return this._meta[2] as string; }
+    set rcid(v: string) { this._meta[2] = v; }
     get metadata() { return this._meta; }
-    set metadata(v) {
+    set metadata(v: (string | null)[]) {
         if (!Array.isArray(v)) return;
         for (let i = 0; i < v.length && i < 10; i++) {
             if (v[i] != null) this._meta[i] = v[i];
         }
     }
 
-    async generateContent({ prompt, files = null, deep_research = false, extended_thinking = false } = {}) {
+    async generateContent(opts: GenerateContentOptions) {
+        const { prompt, files = null, deep_research = false, extended_thinking = false } = opts;
         if (!prompt) throw new Error('Prompt cannot be empty.');
         const output = await this.client._generateContent({
             prompt, files, model: this.model, gem: this.gem,
@@ -42,7 +56,8 @@ class ChatSession {
         return output;
     }
 
-    async *generateContentStream({ prompt, files = null, deep_research = false, extended_thinking = false } = {}) {
+    async *generateContentStream(opts: GenerateContentOptions)  {
+        const { prompt, files = null, deep_research = false, extended_thinking = false } = opts;
         if (!prompt) throw new Error('Prompt cannot be empty.');
         let lastOutput;
         for await (const out of this.client._generateContentStream({
@@ -58,7 +73,7 @@ class ChatSession {
         }
     }
 
-    chooseCandidate(index) {
+    chooseCandidate(index: number) {
         if (!this.lastOutput) throw new Error('No response yet.');
         if (index < 0 || index >= this.lastOutput.candidates.length) throw new Error('Invalid candidate index.');
         this.rcid = this.lastOutput.candidates[index].rcid;
@@ -69,5 +84,3 @@ class ChatSession {
         if (this.cid) await this.client.deleteChat(this.cid);
     }
 }
-
-module.exports = { ChatSession };

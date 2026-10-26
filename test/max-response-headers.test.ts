@@ -1,13 +1,12 @@
-'use strict';
+import type { AddressInfo } from 'node:net';
 
-const assert = require('assert');
-const http = require('http');
-const net = require('net');
-const path = require('path');
+import assert from 'node:assert';
+import http from 'node:http';
+import net from 'node:net';
 
-const { Gemini } = require(path.join(__dirname, '..', 'index'));
-const { AuthError } = require(path.join(__dirname, '..', 'src', 'errors'));
-const { RPCData } = require(path.join(__dirname, '..', 'src', 'types', 'model'));
+import { Gemini } from '../index.js';
+import { AuthError } from '../src/errors.js';
+import { RPCData } from '../src/types/model.js';
 
 const TARGET_HEADER_BYTES = 20 * 1024;
 const BODY_INIT_OK = '<!doctype html><html><body><script>window.WIZ_global_data = '
@@ -20,7 +19,7 @@ const BODY_INIT_OK = '<!doctype html><html><body><script>window.WIZ_global_data 
     })
     + ';</script></body></html>';
 
-function buildSetCookieFlood(targetBytes) {
+function buildSetCookieFlood(targetBytes: number) {
     const lines = [];
     let total = 0;
     let i = 0;
@@ -33,9 +32,15 @@ function buildSetCookieFlood(targetBytes) {
     return lines.join('');
 }
 
-function startFixtureServer({ headerBytes = TARGET_HEADER_BYTES, getBody = '', postBody = null } = {}) {    return new Promise((resolve) => {
+function startFixtureServer(opts: { headerBytes?: number, getBody?: string, postBody?: string } = {}) {
+    const { headerBytes = TARGET_HEADER_BYTES, getBody = '', postBody = null } = opts;
+    return new Promise<{
+        server: net.Server;
+        port: number;
+        headerBlockBytes: number;
+    }>((resolve) => {
         const flood = buildSetCookieFlood(headerBytes);
-        const buildResponse = (body) => {
+        const buildResponse = (body: string) => {
             const responseBody = Buffer.from(body, 'utf8');
             return Buffer.concat([
                 Buffer.from(
@@ -59,17 +64,20 @@ function startFixtureServer({ headerBytes = TARGET_HEADER_BYTES, getBody = '', p
             });
         });
         server.listen(0, '127.0.0.1', () => {
-            resolve({ server, port: server.address().port, headerBlockBytes: flood.length });
+            resolve({ server, port: (server.address() as AddressInfo).port, headerBlockBytes: flood.length });
         });
     });
 }
 
-function fixtureOrigin(port) {
+function fixtureOrigin(port: number) {
     return `http://127.0.0.1:${port}`;
 }
 
 function startRedirectFixtureServer({ hops = 7 } = {}) {
-    return new Promise((resolve) => {
+    return new Promise<{
+        server: net.Server;
+        port: number;
+    }>((resolve) => {
         const server = net.createServer((socket) => {
             let responded = false;
             socket.on('data', (chunk) => {
@@ -86,7 +94,7 @@ function startRedirectFixtureServer({ hops = 7 } = {}) {
             });
         });
         server.listen(0, '127.0.0.1', () => {
-            resolve({ server, port: server.address().port });
+            resolve({ server, port: (server.address() as AddressInfo).port });
         });
     });
 }
@@ -101,7 +109,7 @@ async function testFixtureExceedsLlhttpDefault() {
                 res.resume();
                 res.on('end', () => {
                     server.close();
-                    resolve(res.headers['set-cookie'].length);
+                    resolve(res.headers['set-cookie']?.length);
                 });
             }
         );
@@ -179,7 +187,7 @@ async function testExplicitDefaultCapStillRejectsOversizedHeaders() {
 
         await assert.rejects(
             () => client.init(),
-            (e) => {
+            (e: any) => {
                 let cur = e;
                 while (cur) {
                     if (cur.code === 'HPE_HEADER_OVERFLOW' || /header overflow/i.test(cur.message || '')) return true;
@@ -235,7 +243,7 @@ async function testRedirectCapStillHonored() {
 
         await assert.rejects(
             () => client.init(),
-            (e) => {
+            (e: any) => {
                 let cur = e;
                 while (cur) {
                     if (/redirects exceeded/i.test(cur.message || '')) return true;

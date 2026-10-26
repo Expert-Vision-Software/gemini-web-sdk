@@ -1,9 +1,9 @@
-'use strict';
+import type { SaveVideoResult, SaveMediaResult, IWebImage, IGeneratedImage, IGeneratedVideo, IGeneratedMedia } from './media.js';
 
-const { inspect } = require('util');
-const { WebImage, GeneratedImage } = require('./media');
+import { inspect } from 'node:util';
+import type { IDeepResearchPlan } from './research.js';
 
-function decodeHtml(str) {
+function decodeHtml(str: string) {
     if (!str) return str;
     return str
         .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(parseInt(n, 10)))
@@ -28,21 +28,66 @@ function decodeHtml(str) {
         .replace(/&rsquo;/g, '’');
 }
 
-class Candidate {
-    constructor({
-        rcid,
-        index = 0,
-        text,
-        text_delta = null,
-        thoughts = null,
-        thoughts_delta = null,
-        web_images = [],
-        generated_images = [],
-        generated_videos = [],
-        generated_media = [],
-        deep_research_plan = null,
-        done = false,
-    } = {}) {
+export interface ICandidate {
+    index: number;
+    rcid: string;
+    text: string;
+    text_delta: string | null;
+    thoughts: string | null;
+    thoughts_delta: string | null;
+    web_images: IWebImage[];
+    generated_images: IGeneratedImage[];
+    generated_videos: IGeneratedVideo[];
+    generated_media: IGeneratedMedia[];
+    deep_research_plan: IDeepResearchPlan | null;
+    done: boolean;
+    get images(): (IWebImage | IGeneratedImage)[];
+    get videos(): IGeneratedVideo[];
+    get media(): IGeneratedMedia[];
+    toString(): string;
+}
+
+export class Candidate implements ICandidate {
+    index: number;
+    rcid: string;
+    text: string;
+    text_delta: string | null;
+    thoughts: string | null;
+    thoughts_delta: string | null;
+    web_images: IWebImage[];
+    generated_images: IGeneratedImage[];
+    generated_videos: IGeneratedVideo[];
+    generated_media: IGeneratedMedia[];
+    deep_research_plan: IDeepResearchPlan | null;
+    done: boolean;
+    constructor(opts: {
+        rcid: string;
+        index?: number;
+        text: string;
+        text_delta?: string | null;
+        thoughts?: string | null;
+        thoughts_delta?: string | null;
+        web_images?: IWebImage[];
+        generated_images?: IGeneratedImage[];
+        generated_videos?: IGeneratedVideo[];
+        generated_media?: IGeneratedMedia[];
+        deep_research_plan?: IDeepResearchPlan | null;
+        done?: boolean;
+    }) {
+        const {
+            rcid,
+            index = 0,
+            text,
+            text_delta = null,
+            thoughts = null,
+            thoughts_delta = null,
+            web_images = [],
+            generated_images = [],
+            generated_videos = [],
+            generated_media = [],
+            deep_research_plan = null,
+            done = false,
+        } = opts;
         this.index = index;
         this.rcid = rcid;
         this.text = decodeHtml(text);
@@ -79,8 +124,49 @@ class Candidate {
     }
 }
 
-class ModelOutput {
-    constructor(metadata, candidates, { chosen = 0, model = '', gem = null } = {}) {
+export interface SaveAllResult {
+    images: string[];
+    videos: SaveVideoResult[];
+    media: SaveMediaResult[];
+}
+
+export interface IModelOutput {
+    cid: string;
+    rid: string;
+    model: string;
+    gem: string | null;
+    created: number;
+    candidates: Candidate[];
+    chosen: number;
+    get rcid(): string;
+    get done(): boolean;
+    get text(): string;
+    get text_delta(): string;
+    get thoughts(): string | null;
+    get thoughts_delta(): string;
+    get images(): (IWebImage | IGeneratedImage)[];
+    get videos(): IGeneratedVideo[];
+    get media(): IGeneratedMedia[];
+    get deep_research_plan(): IDeepResearchPlan | null;
+    get metadata(): (string | null)[];
+    set metadata(v: (string | null)[]);
+
+    saveAll(opts?: { path?: string; verbose?: boolean }): Promise<SaveAllResult>;
+    toString(): string;
+}
+
+export class ModelOutput implements IModelOutput {
+    cid: string;
+    rid: string;
+    model: string;
+    gem: string | null;
+    created: number;
+    candidates: Candidate[];
+    chosen: number;
+    
+    _metadata: (string | null)[];
+    constructor(metadata: string[], candidates: Candidate[], opts: { chosen?: number, model?: string, gem?: string| null } = {}) {
+        const { chosen = 0, model = '', gem = null } = opts;
         this.cid = metadata?.[0] || '';
         this.rid = metadata?.[1] || '';
         this.model = model;
@@ -106,12 +192,13 @@ class ModelOutput {
     get metadata() { return this._metadata; }
     set metadata(v) { this._metadata = v; }
 
-    async saveAll({ path = 'temp', verbose = false } = {}) {
+    async saveAll(opts: { path?: string; verbose?: boolean } = {}): Promise<SaveAllResult> {
+        const { path = 'temp', verbose = false } = opts;
         const c = this.candidates[this.chosen];
         if (!c) return { images: [], videos: [], media: [] };
         const images = await Promise.all(c.images.map(img => img.save({ path, verbose })));
-        const videos = await Promise.all(c.videos.map(vid => vid.save({ savePath: path, verbose })));
-        const media = await Promise.all(c.media.map(m => m.save({ savePath: path, verbose })));
+        const videos = await Promise.all(c.videos.map(vid => vid.save({ path, verbose })));
+        const media = await Promise.all(c.media.map(m => m.save({ path, verbose })));
         return { images, videos, media };
     }
 
@@ -133,5 +220,3 @@ class ModelOutput {
         return lines.join('\n');
     }
 }
-
-module.exports = { Candidate, ModelOutput };

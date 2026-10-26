@@ -1,15 +1,16 @@
-'use strict';
+import type { AxiosResponseHeaders, RawAxiosResponseHeaders } from 'axios';
+import type { EndpointOverrides } from '../constants.js';
 
-const axios = require('axios');
-const { Endpoint, Headers } = require('../constants');
-const { AuthError } = require('../errors');
-const { DEFAULT_MAX_RESPONSE_HEADER_SIZE, headerLimitConfig } = require('./request');
+import axios from 'axios';
+import { Endpoint, Headers } from '../constants.js';
+import { AuthError } from '../errors.js';
+import { DEFAULT_MAX_RESPONSE_HEADER_SIZE, headerLimitConfig } from './request.js';
 
-function cookieStr(c) {
+export function cookieStr(c: Record<string, string>) {
     return Object.entries(c).map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
-function parseCookies(headers, base = {}) {
+export function parseCookies(headers: RawAxiosResponseHeaders | AxiosResponseHeaders, base: Record<string, string> = {}): Record<string, string> {
     const out = { ...base };
     const raw = headers['set-cookie'] || headers['Set-Cookie'];
     const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
@@ -21,7 +22,7 @@ function parseCookies(headers, base = {}) {
     return out;
 }
 
-function parseProxy(str) {
+export function parseProxy(str: string | null) {
     if (!str) return undefined;
     try {
         const u = new URL(str);
@@ -31,7 +32,8 @@ function parseProxy(str) {
     }
 }
 
-async function sendInitRequest(cookies, proxy = null, { maxHeaderSize = DEFAULT_MAX_RESPONSE_HEADER_SIZE, endpoints = {} } = {}) {
+async function sendInitRequest(cookies: Record<string, string>, proxy: string | null = null, opts: { maxHeaderSize?: number, endpoints?: EndpointOverrides } = {}) {
+    const { maxHeaderSize = DEFAULT_MAX_RESPONSE_HEADER_SIZE, endpoints = {} } = opts;
     const res = await axios.get(endpoints.INIT || Endpoint.INIT, {
         headers: { ...Headers.GEMINI, 'Cookie': cookieStr(cookies) },
         ...headerLimitConfig(maxHeaderSize, { maxRedirects: 5 }),
@@ -47,8 +49,9 @@ async function sendInitRequest(cookies, proxy = null, { maxHeaderSize = DEFAULT_
     return [snlm0e, cfb2h, fdrfje, language, pushId, parseCookies(res.headers, cookies)];
 }
 
-async function getAccessToken(baseCookies, proxy = null, verbose = false, { maxHeaderSize = DEFAULT_MAX_RESPONSE_HEADER_SIZE, endpoints = {} } = {}) {
-    let extraCookies = {};
+export async function getAccessToken(baseCookies: Record<string, string>, proxy: string | null = null, verbose = false, opts: { maxHeaderSize?: number, endpoints?: EndpointOverrides } = {}) {
+    const { maxHeaderSize = DEFAULT_MAX_RESPONSE_HEADER_SIZE, endpoints = {} } = opts;
+    let extraCookies: Record<string, string> = {};
     try {
         const r = await axios.get(endpoints.GOOGLE || Endpoint.GOOGLE, {
             ...headerLimitConfig(maxHeaderSize, { maxRedirects: 5 }),
@@ -57,7 +60,7 @@ async function getAccessToken(baseCookies, proxy = null, verbose = false, { maxH
         if (r.status === 200) extraCookies = parseCookies(r.headers);
     } catch {}
 
-    const cookies = { ...extraCookies, ...baseCookies };
+    const cookies: Record<string, string> = { ...extraCookies, ...baseCookies };
 
     if (!cookies['__Secure-1PSID']) {
         throw new AuthError('__Secure-1PSID cookie required for authentication.');
@@ -67,5 +70,3 @@ async function getAccessToken(baseCookies, proxy = null, verbose = false, { maxH
     const [snlm0e, cfb2h, fdrfje, language, pushId, validCookies] = result;
     return [snlm0e, cfb2h, fdrfje, language, pushId, validCookies];
 }
-
-module.exports = { getAccessToken, cookieStr, parseCookies, parseProxy };

@@ -1,12 +1,11 @@
-'use strict';
-
-const { getNestedValue } = require('./parser');
+import type { DeepResearchStatusConstructorOptions } from '../types/research.js';
+import { getNestedValue } from './parser.js';
 
 const _RESEARCH_ID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 const _CHAT_ID_RE = /\bc_[A-Za-z0-9_]+\b/;
 const _URL_RE = /^https?:\/\//;
 
-function* iterNested(data) {
+export function* iterNested(data: any[] | unknown): any {
     yield data;
     if (Array.isArray(data)) {
         for (const item of data) yield* iterNested(item);
@@ -15,7 +14,7 @@ function* iterNested(data) {
     }
 }
 
-function findFirstMatch(data, pattern) {
+export function findFirstMatch(data: any | any[], pattern: RegExp) {
     for (const item of iterNested(data)) {
         if (typeof item === 'string') {
             const match = pattern.exec(item);
@@ -25,22 +24,22 @@ function findFirstMatch(data, pattern) {
     return null;
 }
 
-function findFirstString(data, exclude = new Set()) {
+export function findFirstString(data: any[], exclude: Set<string> = new Set<string>()) {
     for (const item of iterNested(data)) {
         if (typeof item === 'string' && item && !exclude.has(item)) return item;
     }
     return null;
 }
 
-function extractResearchId(data) {
+export function extractResearchId(data: any | any[]) {
     return findFirstMatch(data, _RESEARCH_ID_RE);
 }
 
-function extractChatId(data) {
+export function extractChatId(data: any | any[]) {
     return findFirstMatch(data, _CHAT_ID_RE);
 }
 
-function collectResearchNotes(data, exclude = new Set()) {
+export function collectResearchNotes(data: any, exclude: Set<string> = new Set<string>()) {
     const notes = [];
     const seen = new Set();
     for (const item of iterNested(data)) {
@@ -54,14 +53,14 @@ function collectResearchNotes(data, exclude = new Set()) {
     return notes;
 }
 
-function findFirstDictKey(data, key) {
+export function findFirstDictKey(data: any, key: string) {
     for (const item of iterNested(data)) {
         if (item && typeof item === 'object' && !Array.isArray(item) && key in item) return item;
     }
     return null;
 }
 
-function extractDeepResearchPlan(candidateData, fallbackText = '') {
+export function extractDeepResearchPlan(candidateData: any, fallbackText: string = '') {
     let metaDict = null;
     let payload = null;
 
@@ -124,7 +123,7 @@ function extractDeepResearchPlan(candidateData, fallbackText = '') {
     };
 }
 
-function extractDeepResearchStatusPayload(payload) {
+export function extractDeepResearchStatusPayload(payload: any|any[]): DeepResearchStatusConstructorOptions | null {
     const data = Array.isArray(payload) && payload.length > 0 && Array.isArray(payload[0]) ? payload[0] : payload;
     const researchId = extractResearchId(data);
     if (!researchId) return null;
@@ -161,15 +160,3 @@ function extractDeepResearchStatusPayload(payload) {
         raw: payload,
     };
 }
-
-module.exports = {
-    iterNested,
-    findFirstMatch,
-    findFirstString,
-    extractResearchId,
-    extractChatId,
-    collectResearchNotes,
-    findFirstDictKey,
-    extractDeepResearchPlan,
-    extractDeepResearchStatusPayload,
-};

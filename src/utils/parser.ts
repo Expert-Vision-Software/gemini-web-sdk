@@ -1,16 +1,18 @@
-'use strict';
-
 const FLICKER_ESC_RE = /\\+[`*_~].*$/;
 const LENGTH_MARKER_RE = /^(\d+)\n/;
 
-function getCleanText(s) {
+export function getCleanText(s: string) {
     if (!s) return '';
     if (s.endsWith('\n```')) s = s.slice(0, -4);
     return s.replace(FLICKER_ESC_RE, '');
 }
 
-function longestCommonSubsequenceBlocks(a, b) {
-    const blocks = [];
+function longestCommonSubsequenceBlocks(a: string, b: string) {
+    const blocks: Array<{
+        a: number;
+        b: number;
+        size: number;
+    }> = [];
     if (!a.length || !b.length) return blocks;
 
     const m = a.length, n = b.length;
@@ -44,7 +46,7 @@ function longestCommonSubsequenceBlocks(a, b) {
     return blocks;
 }
 
-function getDeltaByFpLen(newRaw, lastSentClean, isFinal) {
+export function getDeltaByFpLen(newRaw: string, lastSentClean: string, isFinal: boolean) {
     const newC = isFinal ? newRaw : getCleanText(newRaw);
 
     if (newC.startsWith(lastSentClean)) {
@@ -76,7 +78,7 @@ function getDeltaByFpLen(newRaw, lastSentClean, isFinal) {
     return [newC, newC];
 }
 
-function getNestedValue(data, path, defaultVal = null) {
+export function getNestedValue<R=any | null>(data: any, path: Array<number|string>, defaultVal: any | null = null): R {
     let cur = data;
     for (const k of path) {
         if (cur == null) return defaultVal;
@@ -91,7 +93,13 @@ function getNestedValue(data, path, defaultVal = null) {
     return cur != null ? cur : defaultVal;
 }
 
-class StreamingFrameParser {
+export class StreamingFrameParser {
+    buffer: string;
+    expectedUnits: number | null;
+    payloadStart: number;
+    scannedChars: number;
+    scannedUnits: number;
+    prefixChecked: boolean;
     constructor() {
         this.buffer = '';
         this.expectedUnits = null;
@@ -107,12 +115,12 @@ class StreamingFrameParser {
         this.prefixChecked = false;
     }
 
-    feed(content) {
+    feed(content: string) {
         if (typeof content !== 'string') throw new TypeError(`Expected string, got ${typeof content}`);
         if (content) this.buffer += content;
         this._stripPrefixOnce();
 
-        const parsed = [];
+        const parsed: string[] = [];
         while (true) {
             if (this.expectedUnits === null && !this._readLengthMarker()) break;
             if (this.expectedUnits === null) break;
@@ -183,23 +191,23 @@ class StreamingFrameParser {
 
         while (this.scannedUnits < this.expectedUnits && idx < limit) {
             const cp = this.buffer.codePointAt(idx);
-            const u = cp > 0xFFFF ? 2 : 1;
+            const u = cp && cp > 0xFFFF ? 2 : 1;
             if (this.scannedUnits + u > this.expectedUnits) break;
             this.scannedUnits += u;
-            this.scannedChars += cp > 0xFFFF ? 2 : 1;
-            idx += cp > 0xFFFF ? 2 : 1;
+            this.scannedChars += cp && cp > 0xFFFF ? 2 : 1;
+            idx += cp && cp > 0xFFFF ? 2 : 1;
         }
     }
 }
 
-function parseResponseByFrame(content) {
+function parseResponseByFrame(content: string) {
     const parser = new StreamingFrameParser();
     const frames = parser.feed(content);
     frames.push(...parser.flush());
     return [frames, parser.buffer];
 }
 
-function extractJsonFromResponse(text) {
+export function extractJsonFromResponse(text: string) {
     if (typeof text !== 'string') throw new TypeError(`Expected string, got ${typeof text}`);
     const parser = new StreamingFrameParser();
     const result = parser.feed(text);
@@ -221,5 +229,3 @@ function extractJsonFromResponse(text) {
     if (lines.length) return lines;
     throw new Error('Could not find valid JSON in response.');
 }
-
-module.exports = { getCleanText, getDeltaByFpLen, getNestedValue, extractJsonFromResponse, StreamingFrameParser };

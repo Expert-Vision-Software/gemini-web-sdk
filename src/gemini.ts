@@ -1,40 +1,68 @@
-'use strict';
+import axios from 'axios';
+import { Buffer } from 'node:buffer';
+import crypto from 'node:crypto';
+import { v4 as uuidv4 } from 'uuid';
 
-const axios = require('axios');
-const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
+import type { ModelDef, ModelInput } from './types/model.js';
+import type { IModelOutput } from './types/output.js';
+import type { IWebImage, IGeneratedImage, IGeneratedVideo, IGeneratedMedia } from './types/media.js';
+import type { IDeepResearchResult, IDeepResearchStatus } from './types/research.js';
+import type { AddGemOptions, AskOptions, GeminiClient, GeminiClientGenerateContentOptions, GeminiClientGenerateOptions, GeminiClientStreamGuestOptions, GeminiOptions, ResearchOptions, SetGemOptions } from './types/gemini.js';
+import type { IChatSession, NewChatOptions } from './types/chat.js';
+import type { ModelIdentifier } from './constants.js';
 
-const {
+import {
     Endpoint, GRPC, Headers, Model, ErrorCode,
     TEMPORARY_CHAT_FLAG_INDEX, STREAMING_FLAG_INDEX, GEM_FLAG_INDEX,
     CARD_CONTENT_RE, ARTIFACTS_RE, DEFAULT_METADATA, MODEL_HEADER_KEY,
-} = require('./constants');
-const { APIError, GeminiError, UsageLimitExceeded, ModelInvalid, TemporarilyBlocked } = require('./errors');
-const { AvailableModel, RPCData } = require('./types/model');
-const { Candidate, ModelOutput } = require('./types/output');
-const { WebImage, GeneratedImage, GeneratedVideo, GeneratedMedia } = require('./types/media');
-const { DeepResearchPlan, DeepResearchStatus, DeepResearchResult } = require('./types/research');
-const { getAccessToken, cookieStr, parseCookies, parseProxy } = require('./utils/auth');
-const { DEFAULT_MAX_RESPONSE_HEADER_SIZE, headerLimitConfig } = require('./utils/request');
-const { uploadFile, parseFileName } = require('./utils/upload');
-const { getDeltaByFpLen, getNestedValue, extractJsonFromResponse, StreamingFrameParser } = require('./utils/parser');
-const { extractDeepResearchPlan, extractDeepResearchStatusPayload } = require('./utils/research');
-const { ChatSession } = require('./chat');
+} from './constants.js';
+import { APIError, GeminiError, UsageLimitExceeded, ModelInvalid, TemporarilyBlocked } from './errors.js';
+import { AvailableModel, RPCData } from './types/model.js';
+import { Candidate, ModelOutput } from './types/output.js';
+import { WebImage, GeneratedImage, GeneratedVideo, GeneratedMedia } from './types/media.js';
+import { DeepResearchPlan, DeepResearchStatus, DeepResearchResult } from './types/research.js';
+import { getAccessToken, cookieStr, parseCookies, parseProxy } from './utils/auth.js';
+import { DEFAULT_MAX_RESPONSE_HEADER_SIZE, headerLimitConfig } from './utils/request.js';
+import { uploadFile, parseFileName } from './utils/upload.js';
+import { getDeltaByFpLen, getNestedValue, extractJsonFromResponse, StreamingFrameParser } from './utils/parser.js';
+import { extractDeepResearchPlan, extractDeepResearchStatusPayload } from './utils/research.js';
+import { ChatSession } from './chat.js';
+import { ChatHistory, ChatTurn } from './types/chat.js';
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
-class Gemini {
-    constructor({
-        secure_1psid = null,
-        proxy = null,
-        timeout = 300000,
-        autoClose = false,
-        closeDelay = 300000,
-        verbose = false,
-        watchdogTimeout = 30000,
-        maxResponseHeaderSize = DEFAULT_MAX_RESPONSE_HEADER_SIZE,
-        endpoints = {},
-    } = {}) {
+export class Gemini implements GeminiClient {
+    cookies: Record<string, string>;
+    proxy: string | null;
+    verbose: boolean;
+    timeout: number;
+    autoClose: boolean;
+    closeDelay: number;
+    watchdogTimeout: number;
+    maxResponseHeaderSize: number;
+    endpoints: { GOOGLE: string; INIT: string; GENERATE: string; UPLOAD: string; BATCH_EXEC: string; };
+    _ready: boolean;
+    _guest: boolean;
+    accessToken: string | null;
+    buildLabel: string | null;
+    sessionId: string | null;
+    language: string;
+    pushId: string;
+    closeTask: NodeJS.Timeout | null;
+    _reqid: number;
+    _initPromise: Promise<void> | null;
+    constructor(opts: GeminiOptions = {}) {
+        const {
+            secure_1psid = null,
+            proxy = null,
+            timeout = 300000,
+            autoClose = false,
+            closeDelay = 300000,
+            verbose = false,
+            watchdogTimeout = 30000,
+            maxResponseHeaderSize = DEFAULT_MAX_RESPONSE_HEADER_SIZE,
+            endpoints = {},
+        } = opts;
         this.cookies = secure_1psid ? { '__Secure-1PSID': secure_1psid } : {};
         this.proxy = proxy;
         this.verbose = verbose;
@@ -80,7 +108,7 @@ class Gemini {
 
                     if (this.autoClose) this._resetCloseTask();
                 }
-            } catch (e) {
+            } catch (e: any) {
                 this._ready = false;
                 this._initPromise = null;
                 await this.close();
@@ -92,17 +120,18 @@ class Gemini {
 
     async init() { return this._ensure(); }
 
-    _resolveModel(model) {
+    _resolveModel(model: ModelInput) {
         if (!model || model === Model.UNSPECIFIED) return Model.UNSPECIFIED;
         if (model instanceof AvailableModel) return model;
-        if (typeof model === 'string') return Model.fromName(model);
+        if (typeof model === 'string') return Model.fromName(model as ModelIdentifier);
         if (typeof model === 'object' && model.model_name && model.model_header) {
             return Model.fromDict({ model_name: model.model_name, model_header: model.model_header });
         }
         return Model.UNSPECIFIED;
     }
 
-    newChat({ model = Model.UNSPECIFIED, temporary = false, gem = null } = {}) {
+    newChat(opts: NewChatOptions = {}): IChatSession {
+        const { model = Model.UNSPECIFIED, temporary = false, gem = null } = opts;
         return new ChatSession(this, { model, temporary, gem });
     }
 
@@ -112,7 +141,7 @@ class Gemini {
         return await this._fetchRecentChats();
     }
 
-    async readChat(cid, limit = 10) {
+    async readChat(cid: string, limit: number = 10) {
         if (this._guest) throw new APIError('Chat history not available in guest mode.');
         await this._ensure();
         const response = await this._batchExecute([
@@ -157,7 +186,7 @@ class Gemini {
         return [];
     }
 
-    async continueChat(cid) {
+    async continueChat(cid: string) {
         if (this._guest) throw new APIError('Chat history not available in guest mode.');
         const history = await this.readChat(cid, 1);
         const lastModelTurn = [...history].reverse().find(t => t.role === 'model');
@@ -168,7 +197,7 @@ class Gemini {
         return session;
     }
 
-    async deleteChat(cid) {
+    async deleteChat(cid: string) {
         if (this._guest) throw new APIError('Chat management not available in guest mode.');
         await this._ensure();
         await this._batchExecute([new RPCData({ rpcid: GRPC.DELETE_CHAT_1, payload: JSON.stringify([cid]) })]);
@@ -184,7 +213,8 @@ class Gemini {
             new RPCData({ rpcid: GRPC.LIST_GEMS, payload: `[2,['${language}'],0]`, identifier: 'custom' }),
         ]);
         const responseJson = extractJsonFromResponse(response.data);
-        let predefined = [], custom = [];
+        let predefined = [] as string[];
+        let custom = [] as string[];
         for (const part of responseJson) {
             const id = getNestedValue(part, [-1]);
             const bodyStr = getNestedValue(part, [2]);
@@ -193,8 +223,8 @@ class Gemini {
             if (id === 'system') predefined = getNestedValue(body, [2], []);
             else if (id === 'custom') custom = getNestedValue(body, [2], []);
         }
-        const out = [];
-        const push = (arr, predef) => {
+        const out: Array<{ id: string; name: string; description: string; prompt: string | null; predefined: boolean }> = [];
+        const push = (arr: string[], predef: boolean) => {
             for (const g of arr) {
                 if (g && g[0]) out.push({ id: g[0], name: g[1]?.[0] || '', description: g[1]?.[1] || '', prompt: g[2]?.[0] || null, predefined: predef });
             }
@@ -204,7 +234,8 @@ class Gemini {
         return out;
     }
 
-    async addGem({ name, prompt, description = '' } = {}) {
+    async addGem(opts: AddGemOptions) {
+        const { name, prompt, description = '' } = opts;
         if (this._guest) throw new APIError('Gems not available in guest mode.');
         await this._ensure();
         if (!name || !prompt) throw new Error('Name and prompt required.');
@@ -219,7 +250,8 @@ class Gemini {
         return { id, name, description, prompt, predefined: false };
     }
 
-    async setGem({ gem, name, prompt, description = '' } = {}) {
+    async setGem(opts: SetGemOptions) {
+        const { gem, name, prompt, description = '' } = opts;
         if (this._guest) throw new APIError('Gems not available in guest mode.');
         await this._ensure();
         const id = typeof gem === 'object' ? gem.id : gem;
@@ -230,7 +262,7 @@ class Gemini {
         return { id, name, description, prompt, predefined: false };
     }
 
-    async delGem(gem) {
+    async delGem(gem: { id: string } | string) {
         if (this._guest) throw new APIError('Gems not available in guest mode.');
         await this._ensure();
         const id = typeof gem === 'object' ? gem.id : gem;
@@ -246,7 +278,7 @@ class Gemini {
             'BASIC_PRO', 'BASIC_FLASH', 'BASIC_LITE', 'BASIC_THINKING',
             'PLUS_PRO', 'PLUS_FLASH', 'PLUS_LITE',
             'ADVANCED_PRO', 'ADVANCED_FLASH', 'ADVANCED_LITE',
-        ];
+        ] as Array<keyof Omit<typeof Model, 'fromName' | 'fromDict' | 'modelId'>>;
         for (const key of keys) {
             const m = Model[key];
             const modelId = Model.modelId(m);
@@ -263,19 +295,21 @@ class Gemini {
         return result;
     }
 
-    async research(prompt, { wait = true, pollInterval = 10000, timeout = 600000, onStatus = null } = {}) {
+    async research(prompt: string, opts: ResearchOptions = {}): Promise<IDeepResearchResult> {
+        const { wait = true, pollInterval = 10000, timeout = 600000, onStatus = null } = opts;
         if (this._guest) throw new APIError('Deep research not available in guest mode.');
         const chat = this.newChat({ model: Model.UNSPECIFIED });
         const plan = await this._createDeepResearchPlan(prompt, chat);
         if (!plan) throw new GeminiError('Failed to create deep research plan.');
         await this._startDeepResearch(plan, chat);
-        if (!wait) return { plan };
+        if (!wait) return new DeepResearchResult({ plan });
         const result = await this._waitDeepResearch(plan, pollInterval, timeout, onStatus);
         result.plan = plan;
         return result;
     }
 
-    async ask(prompt, { model, gem, temporary, files, extended_thinking } = {}) {
+    async ask(prompt: string, opts: AskOptions = {}) {
+        const { model, gem, temporary, files, extended_thinking } = opts;
         const chat = this.newChat({ model, gem, temporary });
         return chat.generateContent({ prompt, files, extended_thinking });
     }
@@ -286,16 +320,17 @@ class Gemini {
         if (this.closeTask) { clearTimeout(this.closeTask); this.closeTask = null; }
     }
 
-    async _generateContent({ prompt, files = null, model = Model.UNSPECIFIED, gem = null, chat = null, temporary = false, deep_research = false, extended_thinking = false }) {
+    async _generateContent(opts: GeminiClientGenerateContentOptions){
+        const { prompt, files = null, model = Model.UNSPECIFIED, gem = null, chat = null, temporary = false, deep_research = false, extended_thinking = false } = opts;
         await this._ensure();
         if (this._guest && files) throw new APIError('File upload not available in guest mode.');
         if (this._guest && deep_research) throw new APIError('Deep research not available in guest mode.');
-        let fileData = null;
+        let fileData: (string | any[])[][] | null = null;
         if (files && files.length) {
             const uploaded = await Promise.all(files.map(f => uploadFile(f, this.proxy, this.pushId, this.cookies, { maxHeaderSize: this.maxResponseHeaderSize, endpoints: this.endpoints })));
             fileData = uploaded.map((url, i) => [[url], parseFileName(files[i])]);
         }
-        const ss = { last_texts: {}, last_thoughts: {} };
+        const ss: { last_texts: Record<string, string>, last_thoughts: Record<string, string> } = { last_texts: {}, last_thoughts: {} };
         let output = null;
         for await (const out of this._generate({ prompt, fileData, model, gem, chat, temporary, ss, deep_research, extended_thinking })) output = out;
         if (!output) throw new GeminiError('Failed to generate contents.');
@@ -303,7 +338,8 @@ class Gemini {
         return output;
     }
 
-    async *_generateContentStream({ prompt, files = null, model = Model.UNSPECIFIED, gem = null, chat = null, temporary = false, deep_research = false, extended_thinking = false }) {
+    async *_generateContentStream(opts: GeminiClientGenerateContentOptions) {
+        const { prompt, files = null, model = Model.UNSPECIFIED, gem = null, chat = null, temporary = false, deep_research = false, extended_thinking = false } = opts;
         await this._ensure();
         if (this._guest && files) throw new APIError('File upload not available in guest mode.');
         if (this._guest && deep_research) throw new APIError('Deep research not available in guest mode.');
@@ -312,7 +348,7 @@ class Gemini {
             const uploaded = await Promise.all(files.map(f => uploadFile(f, this.proxy, this.pushId, this.cookies, { maxHeaderSize: this.maxResponseHeaderSize, endpoints: this.endpoints })));
             fileData = uploaded.map((url, i) => [[url], parseFileName(files[i])]);
         }
-        const ss = { last_texts: {}, last_thoughts: {} };
+        const ss: { last_texts: Record<string, string>, last_thoughts: Record<string, string> } = { last_texts: {}, last_thoughts: {} };
         let output = null;
         for await (const out of this._generate({ prompt, fileData, model, gem, chat, temporary, ss, deep_research, extended_thinking })) {
             output = out;
@@ -321,7 +357,9 @@ class Gemini {
         if (output && chat) { output.metadata = chat.metadata; chat.lastOutput = output; }
     }
 
-    async *_generate({ prompt, fileData = null, model = Model.UNSPECIFIED, gem = null, chat = null, temporary = false, ss = null, deep_research = false, extended_thinking = false }, retries = 5) {
+    async *_generate(opts: GeminiClientGenerateOptions, retries: number = 5) {
+        const { prompt, fileData = null, gem = null, chat = null, temporary = false, ss = null, deep_research = false, extended_thinking = false } = opts;
+        let { model = Model.UNSPECIFIED } = opts;
         if (!prompt) throw new Error('Prompt cannot be empty.');
         if (this._guest) {
             for await (const out of this._streamGuest({ prompt, chat, ss })) yield out;
@@ -332,7 +370,7 @@ class Gemini {
             try {
                 for await (const out of this._stream({ prompt, fileData, model, gem, chat, temporary, ss, deep_research, extended_thinking })) yield out;
                 return;
-            } catch (e) {
+            } catch (e: any) {
                 if (e instanceof GeminiError || e instanceof ModelInvalid || e instanceof UsageLimitExceeded || e instanceof TemporarilyBlocked) throw e;
                 if (attempt >= retries) throw e;
                 await sleep(1000 * (attempt + 1));
@@ -340,10 +378,11 @@ class Gemini {
         }
     }
 
-    async *_stream({ prompt, fileData = null, model = Model.UNSPECIFIED, gem = null, chat = null, temporary = false, ss = null, deep_research = false, extended_thinking = false }) {
+    async *_stream(opts: GeminiClientGenerateOptions) {
+        const { prompt, fileData = null, model = Model.UNSPECIFIED, gem = null, chat = null, temporary = false, ss = null, deep_research = false, extended_thinking = false } = opts;
         const _reqid = this._reqid;
         this._reqid += 100000;
-        const gemId = gem?.id || gem;
+        const gemId = (gem && typeof gem !== 'string'?gem.id: gem);
         const chatBackup = chat ? { metadata: [...chat.metadata], cid: chat.cid, rid: chat.rid, rcid: chat.rcid } : null;
 
         const inner = new Array(81).fill(null);
@@ -375,10 +414,10 @@ class Gemini {
         const uid = uuidv4().toUpperCase();
         inner[59] = uid;
 
-        const modelHeaders = { ...model.model_header };
+        const modelHeaders = (model as ModelDef)?.model_header?{ ...(model as ModelDef)?.model_header }:{};
         if (MODEL_HEADER_KEY in modelHeaders) {
             try {
-                const parsed = JSON.parse(modelHeaders[MODEL_HEADER_KEY]);
+                const parsed = JSON.parse(modelHeaders[MODEL_HEADER_KEY] as string);
                 const modelNumber = typeof parsed[parsed.length - 1] === 'number' ? parsed[parsed.length - 1] : null;
                 if (typeof modelNumber === 'number') inner[79] = modelNumber;
                 parsed.push(extended_thinking ? 2 : 1);
@@ -419,10 +458,10 @@ class Gemini {
         let isCompleted = false, isFinalChunk = false;
         let cid = chat ? chat.cid : '';
         let rid = chat ? chat.rid : '';
-        let videoChipUUID = null;
+        let videoChipUUID: string | null = null;
         const frameParser = new StreamingFrameParser();
 
-        const processParts = (parts) => {
+        const processParts = (parts: string[]) => {
             const outs = [];
             for (const part of parts) {
                 const ec = getNestedValue(part, [5, 2, 0, 1, 0]);
@@ -478,7 +517,7 @@ class Gemini {
                         if (Array.isArray(entry65) && entry65.length >= 2) videoChipUUID = entry65[1];
                     }
 
-                    let drPlan = null;
+                    let drPlan: DeepResearchPlan | null = null;
                     if (deep_research) {
                         const planData = extractDeepResearchPlan(cd, text);
                         if (planData) drPlan = new DeepResearchPlan({ ...planData, cid: chat ? chat.cid : null });
@@ -512,8 +551,8 @@ class Gemini {
             return outs;
         };
 
-        const yielded = [];
-        await new Promise((resolve, reject) => {
+        const yielded: ModelOutput[] = [];
+        await new Promise<void>((resolve, reject) => {
             const watchdog = setInterval(() => {
                 if (!isThinking && !isQueueing && (Date.now() - lastProg) > Math.min(this.timeout, this.watchdogTimeout)) {
                     clearInterval(watchdog);
@@ -521,13 +560,13 @@ class Gemini {
                 }
             }, 1000);
 
-            res.data.on('data', chunk => {
+            res.data.on('data', (chunk: Buffer) => {
                 try {
                     const parts = frameParser.feed(chunk.toString('utf8'));
                     const outs = processParts(parts);
                     for (const o of outs) yielded.push(o);
                     if (outs.length || isThinking || isQueueing) lastProg = Date.now();
-                } catch (e) { clearInterval(watchdog); reject(e); }
+                } catch (e: any) { clearInterval(watchdog); reject(e); }
             });
 
             res.data.on('end', () => {
@@ -538,10 +577,10 @@ class Gemini {
                     const hasMediaOrVideo = yielded.some(o => o.videos?.length > 0 || o.media?.length > 0);
                     if (!isCompleted && !isFinalChunk && !hasMediaOrVideo) reject(new APIError('Stream interrupted or truncated.'));
                     else resolve();
-                } catch (e) { reject(e); }
+                } catch (e: any) { reject(e); }
             });
 
-            res.data.on('error', e => { clearInterval(watchdog); reject(new APIError(`Stream error: ${e.message}`)); });
+            res.data.on('error', (e: Error) => { clearInterval(watchdog); reject(new APIError(`Stream error: ${e.message}`)); });
         });
 
         hasGeneratedText = yielded.length > 0;
@@ -554,7 +593,7 @@ class Gemini {
                     throw hasGeneratedText ? new GeminiError('Connection lost. Recovery timed out.') : new APIError('Polling timed out.');
                 }
                 const recovered = await this._readChatInternal(cid);
-                if (recovered?.turns?.length > 0 && recovered.turns[0].role === 'model') {
+                if (recovered?.turns && recovered?.turns?.length > 0 && recovered.turns[0].role === 'model') {
                     const recoveredOut = recovered.turns[0].model_output;
                     if (recoveredOut?.candidates && (recoveredOut.text || recoveredOut.thoughts || recoveredOut.images?.length || recoveredOut.videos?.length || recoveredOut.media?.length)) {
                         const recRcid = recoveredOut.rcid;
@@ -575,7 +614,7 @@ class Gemini {
             while ((Date.now() - pollStart) < this.timeout) {
                 const recovered = await this._readChatInternal(cid);
                 const recoveredOut = recovered?.turns?.find(t => t.role === 'model')?.model_output;
-                if (recoveredOut?.videos?.length > 0) {
+                if (recoveredOut?.videos && recoveredOut.videos.length > 0) {
                     if (chat) { recoveredOut.metadata = chat.metadata; chat.rcid = recoveredOut.rcid; }
                     yield recoveredOut;
                     return;
@@ -605,7 +644,8 @@ class Gemini {
         this._reqid = Math.floor(Math.random() * 90000) + 10000;
     }
 
-    async *_streamGuest({ prompt, chat = null, ss = null }) {
+    async *_streamGuest(opts: GeminiClientStreamGuestOptions) {
+        const { prompt, chat = null, ss = null }  = opts;
         const _reqid = this._reqid;
         this._reqid += 100000;
 
@@ -706,7 +746,7 @@ class Gemini {
         }
     }
 
-    async _getFullSizeImage(cid, rid, rcid, imageId) {
+    async _getFullSizeImage(cid: string, rid: string, rcid: string, imageId: string) {
         try {
             const payload = [[[null, null, null, [null, null, null, null, null, '']], [imageId, 0], null, [19, ''], null, null, null, null, null, ''], [rid, rcid, cid, null, ''], 1, 0, 1];
             const response = await this._batchExecute([new RPCData({ rpcid: GRPC.GET_FULL_SIZE_IMAGE, payload: JSON.stringify(payload) })]);
@@ -716,7 +756,7 @@ class Gemini {
         } catch { return null; }
     }
 
-    _parseCandidate(candidateData, cid, rid, rcid) {
+    _parseCandidate(candidateData: any, cid: string, rid: string, rcid: string) {
         let text = getNestedValue(candidateData, [1, 0], '');
         if (CARD_CONTENT_RE.test(text)) text = getNestedValue(candidateData, [22, 0]) || text;
         ARTIFACTS_RE.lastIndex = 0;
@@ -763,12 +803,16 @@ class Gemini {
                 generatedMedia.push(new GeneratedMedia({ url: mp4Url, thumbnail: mp4Thumb, mp3_url: mp3Url, mp3_thumbnail: mp3Thumb, cid, rid, rcid, client_ref: this, proxy: this.proxy }));
             }
         }
+        const result: [
+            string, string, IWebImage[], IGeneratedImage[], IGeneratedVideo[], IGeneratedMedia[]
+        ] = [text, thoughts, webImages, generatedImages, generatedVideos, generatedMedia];
 
-        return [text, thoughts, webImages, generatedImages, generatedVideos, generatedMedia];
+        return result;
     }
 
-    async _createDeepResearchPlan(prompt, chat) {
+    async _createDeepResearchPlan(prompt: string, chat: IChatSession) {
         const output = await this._collectResearchOutput(chat, prompt);
+        if (output instanceof ChatHistory) throw new GeminiError(`Gemini did not return a deep research plan. Preview from chat history: ${(output.turns && output.turns[0].text || '').slice(0, 1200)}`);
         const plan = output.deep_research_plan;
         if (!plan) throw new GeminiError(`Gemini did not return a deep research plan. Preview: ${(output.text || '').slice(0, 1200)}`);
         plan.metadata = [...chat.metadata];
@@ -778,13 +822,13 @@ class Gemini {
         return plan;
     }
 
-    async _startDeepResearch(plan, chat) {
+    async _startDeepResearch(plan: DeepResearchPlan, chat: IChatSession) {
         const prompt = plan.confirm_prompt || 'Start research';
         const output = await this._collectResearchOutput(chat, prompt);
         return output;
     }
 
-    async _collectResearchOutput(chat, prompt) {
+    async _collectResearchOutput(chat: IChatSession, prompt: string): Promise<IModelOutput | ChatHistory> {
         let recoverableError = null;
         try {
             const output = await this._generateContent({ prompt, chat, deep_research: true });
@@ -792,7 +836,7 @@ class Gemini {
                 chat.lastOutput = output;
                 return output;
             }
-        } catch (e) {
+        } catch (e: any) {
             if (e instanceof UsageLimitExceeded || e instanceof ModelInvalid || e instanceof TemporarilyBlocked) throw e;
             if (e instanceof GeminiError || e instanceof APIError) recoverableError = e;
             else throw e;
@@ -805,7 +849,7 @@ class Gemini {
         throw new GeminiError(`Gemini returned no usable output for deep research.`);
     }
 
-    async _readChatInternal(cid) {
+    async _readChatInternal(cid: string): Promise<ChatHistory | null> {
         try {
             const response = await this._batchExecute([
                 new RPCData({ rpcid: GRPC.READ_CHAT, payload: JSON.stringify([cid, 5, null, 1, [1], [4], null, 1]) }),
@@ -828,7 +872,7 @@ class Gemini {
                 let body; try { body = JSON.parse(bodyStr); } catch { continue; }
                 const turnsData = getNestedValue(body, [0]) ?? getNestedValue(body, [1]) ?? getNestedValue(body, [2]);
                 if (!turnsData) continue;
-                const turns = [];
+                const turns: ChatTurn[] = [];
                 for (const convTurn of turnsData) {
                     const rid = getNestedValue(convTurn, [0, 1], '');
                     const candidatesList = getNestedValue(convTurn, [3, 0]);
@@ -837,11 +881,11 @@ class Gemini {
                             const rcid = getNestedValue(cd, [0]);
                             if (!rcid) continue;
                             const [text, thoughts, webImgs, genImgs, genVids, genMedia] = this._parseCandidate(cd, cid, rid, rcid);
-                            turns.push({ role: 'model', text, model_output: new ModelOutput([cid, rid, rcid], [new Candidate({ rcid, index: 0, text, thoughts, web_images: webImgs, generated_images: genImgs, generated_videos: genVids, generated_media: genMedia, done: true })]) });
+                            turns.push(new ChatTurn({ role: 'model', text, model_output: new ModelOutput([cid, rid, rcid], [new Candidate({ rcid, index: 0, text, thoughts, web_images: webImgs, generated_images: genImgs, generated_videos: genVids, generated_media: genMedia, done: true })]) }));
                         }
                     }
                     const userText = getNestedValue(convTurn, [2, 0, 0], '');
-                    if (userText) turns.push({ role: 'user', text: userText });
+                    if (userText) turns.push(new ChatTurn({ role: 'user', text: userText }));
                 }
                 return { cid, turns };
             }
@@ -850,12 +894,14 @@ class Gemini {
         } catch { return null; }
     }
 
-    async _waitDeepResearch(plan, pollInterval = 10000, timeout = 600000, onStatus = null) {
+    async _waitDeepResearch(plan: DeepResearchPlan, pollInterval: number = 10000, timeout: number = 600000, onStatus: ((status: IDeepResearchStatus) => void) | null = null) {
         if (!plan.research_id) throw new GeminiError('Cannot poll: plan.research_id is missing.');
         const start = Date.now();
         const statuses = [];
         const chat = this.newChat({ metadata: [...plan.metadata], model: Model.UNSPECIFIED });
-        chat.cid = plan.cid;
+        if (plan.cid !== null) {
+            chat.cid = plan.cid;
+        }
         while ((Date.now() - start) < timeout) {
             const status = plan.research_id ? await this._getDeepResearchStatus(plan.research_id) : null;
             if (status) {
@@ -880,7 +926,7 @@ class Gemini {
         return new DeepResearchResult({ plan, statuses, final_output: finalOutput, done });
     }
 
-    async _getDeepResearchStatus(researchId) {
+    async _getDeepResearchStatus(researchId: string) {
         const response = await this._batchExecute([
             new RPCData({ rpcid: GRPC.DEEP_RESEARCH_STATUS, payload: JSON.stringify([researchId]) }),
         ]);
@@ -900,8 +946,8 @@ class Gemini {
         this.closeTask = setTimeout(() => this.close(), this.closeDelay);
     }
 
-    async _fetchRecentChats(recent = 13) {
-        const fetchBatch = (payload) => this._batchExecute([
+    async _fetchRecentChats(recent: number = 13) {
+        const fetchBatch = (payload: Array<number | null>) => this._batchExecute([
             new RPCData({ rpcid: GRPC.LIST_CHATS, payload: JSON.stringify([recent, null, payload]) }),
         ]);
         const [resp1, resp2] = await Promise.all([fetchBatch([1, null, 1]), fetchBatch([0, null, 1])]);
@@ -936,7 +982,7 @@ class Gemini {
         return recentChats;
     }
 
-    async _batchExecute(payloads, retries = 2, closeOnError = true, sourcePath = '/app') {
+    async _batchExecute(payloads: RPCData[], retries: number = 2, closeOnError: boolean = true, sourcePath: string = '/app') {
         let lastErr;
         for (let attempt = 0; attempt <= retries; attempt++) {
             try {
@@ -975,7 +1021,7 @@ class Gemini {
                     throw new APIError(`Batch execution failed with status code ${res.status}`);
                 }
                 return res;
-            } catch (e) {
+            } catch (e: any) {
                 lastErr = e;
                 if (attempt < retries) await sleep(1000 * (attempt + 1));
             }
@@ -983,5 +1029,3 @@ class Gemini {
         throw lastErr;
     }
 }
-
-module.exports = { Gemini };
