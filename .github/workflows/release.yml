@@ -28,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.parse-version.outputs.version }}
+      sha: ${{ steps.get_sha.outputs.sha }}
     steps:
       - name: Checkout
         if: github.event_name == 'push'
@@ -39,6 +40,13 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      - name: Extract Commit SHA from ref ${{ inputs.ref }}
+        id: get_sha
+        run: |
+          REF_SHA=$(git rev-parse HEAD)
+          echo "sha=$REF_SHA" >> $GITHUB_OUTPUT
+          echo "The SHA of ref is: $REF_SHA"
+
       - name: Parse version
         id: parse-version
         run: |
@@ -49,6 +57,21 @@ jobs:
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Release version: $VERSION"
+
+      - name: Validate version match
+        run: |
+          INPUT_VERSION="${{ steps.parse-version.outputs.version }}"
+          CLEAN_INPUT_VERSION="${INPUT_VERSION#v}"
+
+          PKG_VERSION=$(node -p "require('./package.json').version")
+
+          echo "Version input/tag: $CLEAN_INPUT_VERSION"
+          echo "package.json version: $PKG_VERSION"
+
+          if [ "$CLEAN_INPUT_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Mismatch version! Tag/Input version ($CLEAN_INPUT_VERSION) does not match package.json version ($PKG_VERSION)."
+            exit 1
+          fi
 
       - name: Extract release notes from CHANGELOG.md
         id: notes
@@ -80,6 +103,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.parse-version.outputs.version }}
+          target_commitish: ${{ steps.get_sha.outputs.sha }}
           name: ${{ steps.parse-version.outputs.version }}
           body_path: RELEASE_NOTES.md
           draft: false
@@ -95,10 +119,12 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -112,7 +138,70 @@ jobs:
       - name: Validate prepublish checks
         run: npm test
 
+      - name: Detect repository context
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          GITHUB_SERVER_URL="${{ github.server_url }}"
+          GITHUB_REPOSITORY="${{ github.repository }}"
+          GITHUB_REPOSITORY_URL="${{ github.server_url }}/${{ github.repository }}"
+          GITHUB_OWNER="${{ github.repository_owner }}"
+          GITHUB_OWNER_DISPLAY_NAME=$(gh api "users/${{ github.repository_owner }}" --jq '.name')
+          if [ -z "$GITHUB_OWNER_DISPLAY_NAME" ] || [ "$GITHUB_OWNER_DISPLAY_NAME" = "null" ]; then
+            GITHUB_OWNER_DISPLAY_NAME="$GITHUB_OWNER"
+          fi
+          ORIGINAL_GITHUB_REPO=$(node -p "require('./package.json').repository.url.replaceAll(/^[^\/]+\/\/github\.com\//g, '').replaceAll(/\.git$/g, '')")
+          
+          if [ "$GITHUB_REPOSITORY" != "$ORIGINAL_GITHUB_REPO" ]; then
+            IS_FORK="true"
+          else
+            IS_FORK="false"
+          fi
+
+          echo "GITHUB_REPOSITORY_URL=$GITHUB_REPOSITORY_URL" >> $GITHUB_ENV
+          echo "IS_FORK=$IS_FORK" >> $GITHUB_ENV
+
+          echo "GITHUB_OWNER=$GITHUB_OWNER" >> $GITHUB_ENV
+          echo "GITHUB_OWNER_DISPLAY_NAME=$GITHUB_OWNER_DISPLAY_NAME" >> $GITHUB_ENV
+
+      - name: Adjust package settings for fork
+        if: env.IS_FORK == 'true'
+        run: |
+          PKG_NAME=$(node -p "require('./package.json').name.split('/').pop()")
+          echo "Updating package name to scope of fork @$GITHUB_OWNER/$PKG_NAME"
+          npm pkg set name="@$GITHUB_OWNER/$PKG_NAME"
+
+          PKG_AUTHOR=$(node -p "require('./package.json').author")
+          if [ $(echo "$PKG_AUTHOR" | grep "$GITHUB_OWNER_DISPLAY_NAME" | wc -l) -eq 0 ]; then
+            echo "Updating package author to add the owner of the repository to it: $GITHUB_OWNER_DISPLAY_NAME"
+            npm pkg set author="$PKG_AUTHOR and $GITHUB_OWNER_DISPLAY_NAME"
+          fi
+
+          echo "Updating repository URLs in package.json"
+          npm pkg set repository.type="git" repository.url="git+${GITHUB_REPOSITORY_URL}.git"
+          npm pkg set bugs.url="${GITHUB_REPOSITORY_URL}/issues"
+          npm pkg set homepage="${GITHUB_REPOSITORY_URL}#readme"
+
+      - name: Setup Node.js (just for npm stage publish)
+        if: env.IS_FORK == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache-dependency-path: package-lock.json
+
+      - name: Publish to npm (Fork context)
+        if: env.IS_FORK == 'true'
+        run: |
+          unset NPM_CONFIG_USERCONFIG
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          npm stage publish --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish to npm
+        if: env.IS_FORK == 'false'
         run: |
           unset NPM_CONFIG_USERCONFIG
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
